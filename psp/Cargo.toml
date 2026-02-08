@@ -18,6 +18,9 @@ std = []
 stub-only = []
 embedded-graphics = ["dep:embedded-graphics-core"]
 # Kernel mode module support (PSP_MODULE_INFO flag 0x1000).
+# Enables: module_kernel!() macro, NAND/SIRCS/Codec syscalls,
+# Media Engine control, hardware register access, and exception handling.
+# Requires custom firmware (ARK-4, PRO, ME CFW, etc.).
 kernel = []
 
 [dependencies]

@@ -35,7 +35,11 @@ pub mod debug;
 #[macro_use]
 mod vfpu;
 mod eabi;
+#[cfg(feature = "kernel")]
+pub mod hw;
 pub mod math;
+#[cfg(feature = "kernel")]
+pub mod me;
 pub mod sys;
 #[cfg(not(feature = "stub-only"))]
 pub mod test_runner;
@@ -210,6 +214,7 @@ macro_rules! module {
 ///     // Full hardware access available here.
 /// }
 /// ```
+#[cfg(feature = "kernel")]
 #[macro_export]
 macro_rules! module_kernel {
     ($name:expr, $version_major:expr, $version_minor:expr) => {
@@ -268,7 +273,7 @@ macro_rules! __module_impl {
                 $crate::sys::SceLibraryEntryTable {
                     module_start_nid: $crate::NID_MODULE_START,
                     module_info_nid: $crate::NID_MODULE_INFO,
-                    module_start: module_start,
+                    module_start,
                     module_info: &MODULE_INFO.0,
                 };
 

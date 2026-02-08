@@ -80,21 +80,39 @@ impl From<i32> for SceUid {
     }
 }
 
+/// Memory partition identifiers.
+///
+/// Partitions 1, 3-5, 8-12 are kernel-only. Attempting to allocate from
+/// these partitions in user mode will return an error from the firmware.
+/// Use `SceKernelPrimaryUserPartition` (2) for user-mode allocations.
 // https://github.com/uofw/uofw/blob/f099b78dc0937df4e7346e2e417b63f471f8a3af/include/sysmem_user.h#L12
 #[repr(i32)]
 pub enum SceSysMemPartitionId {
+    /// Unknown/invalid partition.
     SceKernelUnknownPartition = 0,
+    /// Primary kernel partition. **Kernel mode only.**
     SceKernelPrimaryKernelPartition = 1,
+    /// Primary user partition. Safe for user-mode allocations.
     SceKernelPrimaryUserPartition = 2,
-    SceKernelOtherKernelPartition1 = 3, //PRIMARY_ME_KERNEL_PARTITION according to TyRaNiD
+    /// ME kernel partition (PRIMARY_ME_KERNEL_PARTITION). **Kernel mode only.**
+    SceKernelOtherKernelPartition1 = 3,
+    /// Secondary kernel partition. **Kernel mode only.**
     SceKernelOtherKernelPartition2 = 4,
+    /// VSH (Visual Shell) partition. **Kernel mode only.**
     SceKernelVshellPARTITION = 5,
+    /// SC user partition.
     SceKernelScUserPartition = 6,
+    /// ME user partition.
     SceKernelMeUserPartition = 7,
+    /// Extended SC kernel partition. **Kernel mode only.**
     SceKernelExtendedScKernelPartition = 8,
+    /// Extended SC2 kernel partition. **Kernel mode only.**
     SceKernelExtendedSc2KernelPartition = 9,
+    /// Extended ME kernel partition. **Kernel mode only.**
     SceKernelExtendedMeKernelPartition = 10,
+    /// VSH kernel partition. **Kernel mode only.**
     SceKernelVshellKernelPartition = 11,
+    /// Extended kernel partition. **Kernel mode only.**
     SceKernelExtendedKernelPartition = 12,
 }
 
@@ -1031,6 +1049,110 @@ psp_extern! {
     ///
     /// 0 on success
     pub fn sceKernelVolatileMemUnlock(unk: i32) -> i32;
+}
+
+// ── Exception Handling (kernel mode only) ───────────────────────────
+
+/// CPU exception codes for the MIPS R4000 processor.
+///
+/// These correspond to the ExcCode field in the CP0 Cause register.
+///
+/// # Kernel Mode Required
+///
+/// Exception handler registration requires `feature = "kernel"`.
+#[cfg(feature = "kernel")]
+#[repr(u32)]
+pub enum SceKernelException {
+    /// Interrupt (handled separately via the sub-interrupt system).
+    Interrupt = 0,
+    /// TLB modification exception.
+    TlbModification = 1,
+    /// TLB miss on load or instruction fetch.
+    TlbLoadMiss = 2,
+    /// TLB miss on store.
+    TlbStoreMiss = 3,
+    /// Address error on load or instruction fetch.
+    AddressErrorLoad = 4,
+    /// Address error on store.
+    AddressErrorStore = 5,
+    /// Bus error on instruction fetch.
+    BusErrorInstruction = 6,
+    /// Bus error on data load/store.
+    BusErrorData = 7,
+    /// Syscall exception.
+    Syscall = 8,
+    /// Breakpoint exception.
+    Breakpoint = 9,
+    /// Reserved instruction exception.
+    ReservedInstruction = 10,
+    /// Coprocessor unusable exception.
+    CoprocessorUnusable = 11,
+    /// Arithmetic overflow exception.
+    Overflow = 12,
+}
+
+/// Exception handler function signature.
+///
+/// # Parameters
+///
+/// - `exception`: The exception code (one of `SceKernelException` values).
+/// - `context`: Pointer to the saved CPU register state at the time of
+///   the exception. The exact layout is firmware-dependent.
+///
+/// # Return Value
+///
+/// Return 0 to indicate the exception was handled, or -1 to pass it
+/// to the next handler in the chain.
+#[cfg(feature = "kernel")]
+pub type SceKernelExceptionHandler =
+    unsafe extern "C" fn(exception: u32, context: *mut c_void) -> i32;
+
+#[cfg(feature = "kernel")]
+psp_extern! {
+    #![name = "ExceptionManagerForKernel"]
+    #![flags = 0x0001]
+    #![version = (0x00, 0x00)]
+
+    #[psp(0x565C0B0E)]
+    /// Register a default exception handler.
+    ///
+    /// Called for any exception that doesn't have a specific handler
+    /// registered via `sceKernelRegisterExceptionHandler`.
+    ///
+    /// # Kernel Mode Required
+    ///
+    /// This function requires `feature = "kernel"` and `psp::module_kernel!()`.
+    ///
+    /// # Parameters
+    ///
+    /// - `handler`: The exception handler function.
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error.
+    pub fn sceKernelRegisterDefaultExceptionHandler(
+        handler: SceKernelExceptionHandler,
+    ) -> i32;
+
+    #[psp(0x3FB264FC)]
+    /// Register a handler for a specific CPU exception type.
+    ///
+    /// # Kernel Mode Required
+    ///
+    /// This function requires `feature = "kernel"` and `psp::module_kernel!()`.
+    ///
+    /// # Parameters
+    ///
+    /// - `code`: The exception code to handle (one of `SceKernelException`).
+    /// - `handler`: The exception handler function.
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error.
+    pub fn sceKernelRegisterExceptionHandler(
+        code: u32,
+        handler: SceKernelExceptionHandler,
+    ) -> i32;
 }
 
 psp_extern! {

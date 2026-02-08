@@ -109,11 +109,22 @@ pub use font::*;
 mod psmf;
 pub use psmf::*;
 
-// These are not found (likely because this was tested in user mode on a PSP-2000).
-// pub mod sircs;
-// pub mod codec;
-// TODO: Add kernel module support to this crate.
-// pub mod nand;
+// Kernel-only modules: NAND flash, IR remote (SIRCS), and hardware codecs.
+// These require `feature = "kernel"` and `module_kernel!()` declaration.
+#[cfg(feature = "kernel")]
+mod nand;
+#[cfg(feature = "kernel")]
+pub use nand::*;
+
+#[cfg(feature = "kernel")]
+mod sircs;
+#[cfg(feature = "kernel")]
+pub use sircs::*;
+
+#[cfg(feature = "kernel")]
+mod codec;
+#[cfg(feature = "kernel")]
+pub use codec::*;
 
 pub mod vfpu_context;
 

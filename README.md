@@ -83,6 +83,52 @@ See `examples/` directory for sample programs.
 | [#75](https://github.com/overdrivenpotato/rust-psp/issues/75) | memcpy/memset improvements | Idiomatic ptr methods + documented footgun |
 | [#165](https://github.com/overdrivenpotato/rust-psp/issues/165) | Panic/exception support | Hardened malloc/free shims |
 
+## Kernel Mode
+
+Kernel mode unlocks privileged PSP APIs for custom firmware homebrew. Enable it by adding the `kernel` feature and using `module_kernel!()`:
+
+```toml
+[dependencies]
+psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["kernel"] }
+```
+
+```rust
+#![no_std]
+#![no_main]
+
+psp::module_kernel!("MyKernelApp", 1, 0);
+
+fn psp_main() {
+    psp::enable_home_button();
+    unsafe {
+        let me_freq = psp::sys::scePowerGetMeClockFrequency();
+        psp::dprintln!("ME clock: {}MHz", me_freq);
+    }
+}
+```
+
+### What Kernel Mode Enables
+
+| Module | APIs | Description |
+|--------|------|-------------|
+| `psp::sys::nand` | `sceNand*` | NAND flash read/write/status |
+| `psp::sys::sircs` | `sceSircsSend` | Infrared remote control (SIRCS) |
+| `psp::sys::codec` | `sceVideocodec*`, `sceAudiocodec*` | Hardware video/audio codecs |
+| `psp::sys::power` | `scePowerGet/SetMeClockFrequency` | Media Engine clock control |
+| `psp::me` | `me_boot`, `me_alloc`, `to_uncached` | Media Engine coprocessor boot/task management |
+| `psp::hw` | `hw_read32`, `hw_write32`, `Register<T>` | Memory-mapped I/O register access |
+| `psp::sys::kernel` | `sceKernelRegister*ExceptionHandler` | CPU exception handler registration |
+| `psp::sys::kernel` | `sceKernelVolatileMem*` | Extra 4MB RAM (PSP-2000+) |
+| `psp::sys::kernel` | `sceKernelAllocPartitionMemory` | ME/kernel memory partitions |
+
+### Requirements
+
+- **Custom firmware**: ARK-4, PRO CFW, ME CFW, or similar
+- **Firmware version**: 6.60/6.61 (standard CFW base)
+- Kernel-mode EBOOTs run from `ms0:/PSP/GAME/` like user-mode EBOOTs
+
+See `examples/kernel-mode/` for a complete example.
+
 ## CI/CD
 
 All CI runs on a self-hosted GitHub Actions runner shared with [template-repo](https://github.com/AndrewAltimit/template-repo). Rust compilation and testing execute inside Docker containers for reproducibility; AI agent tooling runs directly on the host where it is pre-installed.

@@ -70,6 +70,9 @@ jobs:
       - name: Build cargo-psp (release)
         run: docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
 
+      - name: Build with kernel feature
+        run: docker compose --profile ci run --rm rust-ci cargo +nightly build --features kernel
+
       - name: Build CI test EBOOT
         run: |
           docker compose --profile ci run --rm -w /app/ci/tests rust-ci \

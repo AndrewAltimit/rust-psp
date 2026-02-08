@@ -307,3 +307,45 @@ psp_extern! {
     /// 0 always
     pub fn scePowerRequestSuspend() -> i32;
 }
+
+// Kernel-only power functions for Media Engine clock control.
+// NIDs sourced from kernel-mode RE (ARK-4 CFW, community documentation).
+// These are not in the standard PSPSDK user-mode stubs.
+#[cfg(feature = "kernel")]
+psp_extern! {
+    #![name = "scePower"]
+    #![flags = 0x4001]
+    #![version = (0x00, 0x00)]
+
+    #[psp(0x469989AD)]
+    /// Set the Media Engine clock frequency (MHz).
+    ///
+    /// Valid values: 1-333. The ME clock is independent of the CPU clock.
+    ///
+    /// # Kernel Mode Required
+    ///
+    /// This function requires the module to be compiled with `feature = "kernel"`
+    /// and declared with `psp::module_kernel!()`.
+    ///
+    /// # Parameters
+    ///
+    /// - `frequency`: ME clock frequency in MHz (1-333)
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error.
+    pub fn scePowerSetMeClockFrequency(frequency: i32) -> i32;
+
+    #[psp(0x3234844A)]
+    /// Get the current Media Engine clock frequency (MHz).
+    ///
+    /// # Kernel Mode Required
+    ///
+    /// This function requires the module to be compiled with `feature = "kernel"`
+    /// and declared with `psp::module_kernel!()`.
+    ///
+    /// # Return Value
+    ///
+    /// Current ME clock frequency in MHz.
+    pub fn scePowerGetMeClockFrequency() -> i32;
+}

@@ -1,3 +1,18 @@
+//! Hardware video and audio codec bindings.
+//!
+//! # Kernel Mode Required
+//!
+//! This module requires `feature = "kernel"` and `psp::module_kernel!()`.
+//!
+//! # Media Engine Integration
+//!
+//! The `sceAudiocodecDecode` function uses the Media Engine (ME) coprocessor
+//! internally when called from user mode. In kernel mode, callers can
+//! directly control ME partition allocation for codec buffers using
+//! `sceKernelAllocPartitionMemory` with partition 3 (ME kernel) or 10
+//! (extended ME kernel). This gives finer control over memory layout and
+//! allows sharing codec buffers with custom ME tasks.
+
 psp_extern! {
     #![name = "sceVideocodec"]
     #![flags = 0x4001]
