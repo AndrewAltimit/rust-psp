@@ -149,6 +149,33 @@ rust-psp/
 +-- deny.toml           # cargo-deny license and advisory checks
 ```
 
+### Docker Images
+
+The repo includes two locally-built Docker images for CI and nine pre-built MCP images for AI agent tooling:
+
+| Image | Dockerfile | Built From |
+|-------|-----------|------------|
+| `rust-ci` | `docker/rust-ci.Dockerfile` | This repo |
+| `ppsspp` | `ci/Dockerfile-ppsspp` | This repo |
+| `template-repo-mcp-code-quality` | `docker/mcp-code-quality.Dockerfile` | [template-repo](https://github.com/AndrewAltimit/template-repo) |
+| `template-repo-mcp-content-creation` | `docker/mcp-content.Dockerfile` | template-repo |
+| `template-repo-mcp-gemini` | `docker/mcp-gemini.Dockerfile` | template-repo |
+| `template-repo-mcp-opencode` | `docker/mcp-opencode.Dockerfile` | template-repo |
+| `template-repo-mcp-crush` | `docker/mcp-crush.Dockerfile` | template-repo |
+| `template-repo-mcp-codex` | `docker/codex.Dockerfile` | template-repo |
+| `template-repo-mcp-github-board` | `docker/mcp-github-board.Dockerfile` | template-repo |
+| `template-repo-mcp-agentcore-memory` | `docker/mcp-agentcore-memory.Dockerfile` | template-repo |
+| `template-repo-mcp-reaction-search` | `mcp_reaction_search/Dockerfile` | template-repo |
+
+The MCP images are referenced as `image: template-repo-mcp-<name>:latest` in `docker-compose.yml`. They are **not buildable from this repo** -- source code lives in template-repo under `tools/mcp/`. Build them once from a template-repo checkout:
+
+```bash
+cd /path/to/template-repo
+docker compose --profile services build
+```
+
+The images will then be available locally for this repo's `docker compose --profile services` commands. CI workflows and PSP development work without the MCP images -- they are only needed for interactive AI agent sessions (Claude Code, Codex, etc.).
+
 ## Pre-built Binaries
 
 Pre-built binaries for all toolchain components are available from [GitHub Releases](../../releases). Each release includes:

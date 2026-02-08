@@ -32,9 +32,17 @@ services:
       - psp
 
   # ── Agent MCP Services ────────────────────────────────────────
-  # These services use pre-built images from template-repo.
-  # Build them first in template-repo: docker compose --profile services build
-  # Images follow the naming convention: template-repo-mcp-<name>
+  # These services use pre-built Docker images from template-repo.
+  # They are NOT buildable from this repo -- source code lives in
+  # template-repo under tools/mcp/mcp_<name>/.
+  #
+  # To build them (one-time, from template-repo checkout):
+  #   cd /path/to/template-repo
+  #   docker compose --profile services build
+  #
+  # Images follow the naming convention: template-repo-mcp-<name>:latest
+  # The .mcp.json file in this repo configures Claude Code to launch
+  # these services via `docker compose --profile services run`.
 
   mcp-code-quality:
     image: template-repo-mcp-code-quality:latest
