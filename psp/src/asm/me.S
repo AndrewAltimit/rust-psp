@@ -14,13 +14,6 @@
 .set noreorder
 .set noat
 
-# CP0 register numbers
-.equ CP0_STATUS,    12
-.equ CP0_CAUSE,     13
-.equ CP0_EPC,       14
-.equ CP0_CONFIG,    16
-.equ CP0_ERROREPC,  30
-
 # Cache operation constants
 .equ ICACHE_INDEX_INVALIDATE, 0x00
 .equ DCACHE_INDEX_WRITEBACK_INVALIDATE, 0x01
@@ -51,16 +44,18 @@
 .global _me_boot_entry
 .type _me_boot_entry, @function
 _me_boot_entry:
-    # 1. Disable interrupts and set kernel mode
-    mtc0    $zero, $CP0_STATUS
+    # 1. Disable interrupts and set kernel mode (CP0 Status = register $12)
+    mtc0    $zero, $12
     nop
     nop
 
-    # 2. Clear the Cause register
-    mtc0    $zero, $CP0_CAUSE
+    # 2. Clear the Cause register (CP0 Cause = register $13)
+    mtc0    $zero, $13
     nop
 
     # 3. Invalidate entire instruction cache
+    # Enable MIPS III ISA for the cache instruction (Allegrex supports it)
+    .set mips3
     li      $t0, 0              # cache index
     li      $t1, ICACHE_SIZE    # total size
 _icache_invalidate:
@@ -77,6 +72,7 @@ _dcache_invalidate:
     addiu   $t0, $t0, CACHE_LINE
     bne     $t0, $t1, _dcache_invalidate
     nop
+    .set mips0
 
     # 5. Load parameters from the MeBootParams struct
     # $a0 already points to MeBootParams (set by caller)
