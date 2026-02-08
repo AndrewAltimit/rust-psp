@@ -11,7 +11,8 @@ struct SystemAlloc;
 
 unsafe impl GlobalAlloc for SystemAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let Some(size) = layout.size()
+        let Some(size) = layout
+            .size()
             // We need to store the memory block ID.
             .checked_add(mem::size_of::<SceUid>())
             // We also store padding bytes, in case the block returned from the

@@ -5,7 +5,7 @@
 #![no_main]
 
 use core::ffi::c_void;
-use psp::sys::{self, TexturePixelFormat, DisplayPixelFormat};
+use psp::sys::{self, DisplayPixelFormat, TexturePixelFormat};
 use psp::vram_alloc::get_vram_allocator;
 use psp::{BUF_WIDTH, SCREEN_HEIGHT};
 
@@ -17,7 +17,9 @@ fn psp_main() {
     psp::enable_home_button();
 
     let mut allocator = get_vram_allocator().unwrap();
-    let fbp0 = allocator.alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888).as_mut_ptr_from_zero();
+    let fbp0 = allocator
+        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
+        .as_mut_ptr_from_zero();
 
     unsafe {
         sys::sceGuInit();

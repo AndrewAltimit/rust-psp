@@ -1,7 +1,7 @@
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use clap::Parser;
-use std::io::prelude::*;
 use std::io::SeekFrom;
+use std::io::prelude::*;
 use std::{collections::HashMap, path::PathBuf};
 use std::{error::Error, fs::File};
 

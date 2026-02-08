@@ -2,6 +2,7 @@
 name = "psp-ratatui-example"
 version = "0.1.0"
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 psp = { path = "../../psp", features = ["embedded-graphics"] }

@@ -3,6 +3,7 @@ name = "psp-gu-debug-example"
 version = "0.1.0"
 authors = ["Paul Sajna <sajattack@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 psp = { path = "../../psp" }

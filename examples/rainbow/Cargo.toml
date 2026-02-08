@@ -6,6 +6,7 @@ authors = [
     "Marko Mijalkovic <marko.mijalkovic97@gmail.com>"
 ]
 edition = "2018"
+license = "MIT"
 
 [dependencies]
 psp = { path = "../../psp" }

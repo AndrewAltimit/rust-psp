@@ -3,11 +3,7 @@
 //! Modernized fork of `rust-psp` with kernel mode support, cleaned-up feature
 //! flags, and edition 2024 compatibility.
 
-#![allow(
-    stable_features,
-    internal_features,
-    clippy::missing_safety_doc
-)]
+#![allow(stable_features, internal_features, clippy::missing_safety_doc)]
 // Nightly features still required for PSP target:
 #![feature(
     alloc_error_handler,   // custom OOM handler (still unstable)
@@ -290,8 +286,7 @@ macro_rules! __module_impl {
                         main_thread,
                         $crate::DEFAULT_THREAD_PRIORITY,
                         $crate::DEFAULT_MAIN_STACK_SIZE,
-                        $crate::sys::ThreadAttributes::USER
-                            | $crate::sys::ThreadAttributes::VFPU,
+                        $crate::sys::ThreadAttributes::USER | $crate::sys::ThreadAttributes::VFPU,
                         core::ptr::null_mut(),
                     );
 
@@ -318,21 +313,13 @@ pub fn enable_home_button() {
 
     unsafe {
         unsafe extern "C" fn exit_thread(_args: usize, _argp: *mut c_void) -> i32 {
-            unsafe extern "C" fn exit_callback(
-                _arg1: i32,
-                _arg2: i32,
-                _arg: *mut c_void,
-            ) -> i32 {
+            unsafe extern "C" fn exit_callback(_arg1: i32, _arg2: i32, _arg: *mut c_void) -> i32 {
                 unsafe { sys::sceKernelExitGame() };
                 0
             }
 
             let id = unsafe {
-                sys::sceKernelCreateCallback(
-                    &b"exit_callback\0"[0],
-                    exit_callback,
-                    ptr::null_mut(),
-                )
+                sys::sceKernelCreateCallback(&b"exit_callback\0"[0], exit_callback, ptr::null_mut())
             };
 
             unsafe { sys::sceKernelRegisterExitCallback(id) };

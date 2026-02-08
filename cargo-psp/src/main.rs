@@ -1,7 +1,7 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cargo_metadata::{
-    semver::{BuildMetadata, Prerelease},
     Message as CargoMessage, MetadataCommand,
+    semver::{BuildMetadata, Prerelease},
 };
 use rustc_version::{Channel, Version};
 use std::{
@@ -154,8 +154,7 @@ const MINIMUM_RUSTC_VERSION: Version = Version {
 };
 
 fn main() -> Result<()> {
-    let rustc_version =
-        rustc_version::version_meta().context("failed to query rustc version")?;
+    let rustc_version = rustc_version::version_meta().context("failed to query rustc version")?;
 
     if rustc_version.channel > Channel::Nightly {
         bail!(
@@ -278,10 +277,7 @@ fn main() -> Result<()> {
         .wait()
         .context("failed to wait for `cargo build`")?;
     if !status.success() {
-        bail!(
-            "`cargo build` command exited with status: {:?}",
-            status
-        );
+        bail!("`cargo build` command exited with status: {:?}", status);
     }
 
     // TODO: Error if no bin is ever found.

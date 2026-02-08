@@ -19,10 +19,10 @@ pub fn test_main(test_runner: &mut TestRunner) {
     }
 
     unsafe {
-        let zero_ptr = null_mut();
+        let zero_ptr: *mut u8 = null_mut();
 
-        let chunk1 = alloc.alloc_sized::<[u8; 4]>(1);
-        let chunk2 = alloc.alloc_sized::<[u8; 4]>(1);
+        let chunk1 = alloc.alloc_sized::<[u8; 4]>(1).unwrap();
+        let chunk2 = alloc.alloc_sized::<[u8; 4]>(1).unwrap();
 
         test_runner.check_list(&[
             (
@@ -47,7 +47,7 @@ pub fn test_main(test_runner: &mut TestRunner) {
             ),
         ]);
 
-        let muh_item = alloc.move_to_vram([69u8; 16]);
+        let muh_item = alloc.move_to_vram([69u8; 16]).unwrap();
 
         test_runner.check(
             "vram_moved_addr",

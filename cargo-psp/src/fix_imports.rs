@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use goblin::elf::Elf;
 use std::{collections::HashMap, mem, path::Path};
 
@@ -26,8 +26,8 @@ struct SceStubLibraryEntry {
 /// exactly this.
 pub fn fix<T: AsRef<Path>>(path: T) -> Result<()> {
     let path = path.as_ref();
-    let mut bytes = std::fs::read(path)
-        .with_context(|| format!("failed to read ELF: {}", path.display()))?;
+    let mut bytes =
+        std::fs::read(path).with_context(|| format!("failed to read ELF: {}", path.display()))?;
     let elf = Elf::parse(&bytes).context("failed to parse ELF")?;
 
     let shstrtab = {
@@ -77,7 +77,7 @@ pub fn fix<T: AsRef<Path>>(path: T) -> Result<()> {
 
     // Rough check for the length.
     ensure!(
-        (end - start) % mem::size_of::<SceStubLibraryEntry>() == 0,
+        (end - start).is_multiple_of(mem::size_of::<SceStubLibraryEntry>()),
         ".lib.stub section size ({}) is not a multiple of SceStubLibraryEntry size ({})",
         end - start,
         mem::size_of::<SceStubLibraryEntry>()
@@ -115,7 +115,9 @@ pub fn fix<T: AsRef<Path>>(path: T) -> Result<()> {
         let sorted_pos = stubs_nid_sorted
             .iter()
             .position(|&(j, _)| i == j)
-            .with_context(|| format!("stub entry {i} not found in NID-sorted list (malformed PRX?)"))?;
+            .with_context(|| {
+                format!("stub entry {i} not found in NID-sorted list (malformed PRX?)")
+            })?;
 
         let nid_end = stubs_nid_sorted
             .get(1 + sorted_pos)
@@ -125,8 +127,7 @@ pub fn fix<T: AsRef<Path>>(path: T) -> Result<()> {
         stub.stub_count = ((nid_end - stub.nid_table) / NID_SIZE) as u16;
 
         // Re-serialize the stub and save.
-        let serialized =
-            bincode::serialize(&stub).context("failed to serialize stub entry")?;
+        let serialized = bincode::serialize(&stub).context("failed to serialize stub entry")?;
         stub_entry_buf.copy_from_slice(&serialized);
     }
 

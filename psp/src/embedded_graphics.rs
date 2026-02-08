@@ -3,7 +3,7 @@
 use crate::sys;
 use crate::{BUF_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 use core::convert::TryInto;
-use embedded_graphics_core::{draw_target::*, geometry::Size, pixelcolor::*, prelude::*, Pixel};
+use embedded_graphics_core::{Pixel, draw_target::*, geometry::Size, pixelcolor::*, prelude::*};
 
 pub struct Framebuffer {
     vram_base: *mut u16,

@@ -1,5 +1,5 @@
-use std::time::{Instant, SystemTime, Duration, UNIX_EPOCH};
 use psp::test_runner::TestRunner;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const BEFORE_PSP: Duration = Duration::from_secs(1000212400);
 

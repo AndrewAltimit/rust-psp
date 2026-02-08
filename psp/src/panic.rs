@@ -255,7 +255,7 @@ mod libunwind_shims {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn malloc(size: usize) -> *mut u8 {
-        use alloc::alloc::{alloc, Layout};
+        use alloc::alloc::{Layout, alloc};
 
         let Some(total) = size.checked_add(core::mem::size_of::<usize>()) else {
             return core::ptr::null_mut();
@@ -275,7 +275,7 @@ mod libunwind_shims {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn free(data: *mut u8) {
-        use alloc::alloc::{dealloc, Layout};
+        use alloc::alloc::{Layout, dealloc};
 
         if data.is_null() {
             return;

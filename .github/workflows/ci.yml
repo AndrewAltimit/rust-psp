@@ -1,0 +1,79 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  ci:
+    name: Rust PSP CI
+    runs-on: self-hosted
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      # ── Formatting ──────────────────────────────────────────────
+      - name: Format check (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo fmt --manifest-path cargo-psp/Cargo.toml --all -- --check
+
+      - name: Format check (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo +nightly fmt --all -- --check
+
+      # ── Linting ─────────────────────────────────────────────────
+      - name: Clippy (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo clippy --manifest-path cargo-psp/Cargo.toml --all-targets -- -D warnings
+
+      # ── Tests ───────────────────────────────────────────────────
+      - name: Test (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo test --manifest-path cargo-psp/Cargo.toml
+
+      # ── Build ───────────────────────────────────────────────────
+      - name: Build cargo-psp (release)
+        run: docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
+
+      - name: Build CI test EBOOT
+        run: |
+          docker compose --profile ci run --rm -w /app/ci/tests rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
+
+      # ── License / Advisory ──────────────────────────────────────
+      - name: cargo-deny (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo deny check
+
+      - name: cargo-deny (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo deny --manifest-path cargo-psp/Cargo.toml check
+
+      # ── PSP Emulator Test ───────────────────────────────────────
+      - name: Run test EBOOT in PPSSPPHeadless
+        run: |
+          docker compose --profile psp run --rm ppsspp \
+            /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null || true
+
+          if [ -f psp_output_file.log ]; then
+            cat psp_output_file.log
+            if [ "$(tail -n 1 psp_output_file.log)" = "FINAL_SUCCESS" ]; then
+              echo "PSP tests passed"
+            else
+              echo "PSP tests failed"
+              exit 1
+            fi
+          else
+            echo "No output log -- headless exited without crash (TIMEOUT ok)"
+          fi

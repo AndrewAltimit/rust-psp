@@ -8,9 +8,7 @@ mod time_test;
 psp::module!("std_verification", 1, 1);
 
 fn psp_main() {
-    let tests = &[
-        time_test::test_main,
-    ];
+    let tests = &[time_test::test_main];
 
     let mut runner = TestRunner::new_dprintln_runner();
     runner.start_run();

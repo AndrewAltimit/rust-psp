@@ -1,15 +1,15 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use goblin::elf32::{
     header::Header,
-    program_header::{ProgramHeader, PT_LOAD},
-    reloc::{Rel, R_MIPS_GPREL16, R_MIPS_PC16, SIZEOF_REL},
-    section_header::{SectionHeader, SHF_ALLOC, SHT_LOPROC, SHT_REL, SHT_SYMTAB},
-    sym::{Sym, SIZEOF_SYM},
+    program_header::{PT_LOAD, ProgramHeader},
+    reloc::{R_MIPS_GPREL16, R_MIPS_PC16, Rel, SIZEOF_REL},
+    section_header::{SHF_ALLOC, SHT_LOPROC, SHT_REL, SHT_SYMTAB, SectionHeader},
+    sym::{SIZEOF_SYM, Sym},
 };
 use scroll::{
-    ctx::{TryFromCtx, TryIntoCtx},
     Endian,
+    ctx::{TryFromCtx, TryIntoCtx},
 };
 use std::{collections::HashMap, ffi::CStr, fs, path::PathBuf};
 

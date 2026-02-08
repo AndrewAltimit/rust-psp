@@ -1,9 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn, static_mut_refs)]
 
 use crate::sys::{
-    self,
+    self, MatrixMode, ScePspFMatrix4, ScePspFVector3, ScePspFVector4,
     vfpu_context::{Context, MatrixSet},
-    MatrixMode, ScePspFMatrix4, ScePspFVector3, ScePspFVector4,
 };
 use core::{ffi::c_void, mem::MaybeUninit};
 

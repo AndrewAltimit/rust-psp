@@ -62,11 +62,11 @@ struct Args {
 }
 
 fn read_pbp_input(value: PathBuf) -> Result<Option<Vec<u8>>> {
-    if value == PathBuf::from("NULL") {
+    if value.as_os_str() == "NULL" {
         Ok(None)
     } else {
-        let data = fs::read(&value)
-            .with_context(|| format!("failed to read {}", value.display()))?;
+        let data =
+            fs::read(&value).with_context(|| format!("failed to read {}", value.display()))?;
         Ok(Some(data))
     }
 }

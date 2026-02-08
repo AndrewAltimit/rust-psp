@@ -145,10 +145,7 @@ impl SimpleVramAllocator {
     ///
     /// The caller must ensure the VRAM region is not concurrently accessed
     /// and that the returned reference is not used after `free_all()`.
-    pub unsafe fn move_to_vram<T: Sized>(
-        &mut self,
-        obj: T,
-    ) -> Result<&mut T, VramAllocError> {
+    pub unsafe fn move_to_vram<T: Sized>(&mut self, obj: T) -> Result<&mut T, VramAllocError> {
         let chunk = self.alloc_sized::<T>(1)?;
         let ptr = chunk.as_mut_ptr_direct_to_vram() as *mut T;
         unsafe {

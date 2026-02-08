@@ -1,4 +1,4 @@
-use crate::eabi::{i6, i_ii_i_ri, i_ii_i_rii};
+use crate::eabi::{i_ii_i_ri, i_ii_i_rii, i6};
 use crate::sys::ScePspDateTime;
 use crate::sys::SceUid;
 use core::ffi::c_void;

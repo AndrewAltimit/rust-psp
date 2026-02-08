@@ -141,9 +141,7 @@ impl Font for MsxFont {
     }
 }
 
-use crate::constants::{
-    SCREEN_HEIGHT, SCREEN_WIDTH, VRAM_BASE_UNCACHED, VRAM_BUFFER_WIDTH,
-};
+use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH, VRAM_BASE_UNCACHED, VRAM_BUFFER_WIDTH};
 
 const BUFFER_WIDTH: usize = VRAM_BUFFER_WIDTH as usize;
 const DISPLAY_HEIGHT: usize = SCREEN_HEIGHT as usize;

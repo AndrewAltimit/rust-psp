@@ -83,6 +83,59 @@ See `examples/` directory for sample programs.
 | [#75](https://github.com/overdrivenpotato/rust-psp/issues/75) | memcpy/memset improvements | Idiomatic ptr methods + documented footgun |
 | [#165](https://github.com/overdrivenpotato/rust-psp/issues/165) | Panic/exception support | Hardened malloc/free shims |
 
+## CI/CD
+
+All CI runs on a self-hosted GitHub Actions runner shared with [template-repo](https://github.com/AndrewAltimit/template-repo). Rust compilation and testing execute inside Docker containers for reproducibility; AI agent tooling runs directly on the host where it is pre-installed.
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | push to main | Basic CI: fmt, clippy, test, build, cargo-deny, PSP emulator test |
+| `pr-validation.yml` | pull request | Full PR pipeline: CI + Gemini/Codex AI reviews + agent auto-fix |
+| `main-ci.yml` | push to main, `v*` tags | CI on main, build release binaries and create GitHub Release on tags |
+
+### CI Stages
+
+All stages run inside the `rust-ci` Docker container (`docker compose --profile ci`):
+
+1. **Format check** -- `cargo fmt --check` (stable for cargo-psp, nightly for psp workspace)
+2. **Clippy** -- `cargo clippy -D warnings` (cargo-psp, host target)
+3. **Unit tests** -- `cargo test` (cargo-psp)
+4. **Build** -- release build of cargo-psp + CI test EBOOT
+5. **cargo-deny** -- license and advisory checks for both workspaces
+6. **PSP emulator test** -- run test EBOOT in PPSSPPHeadless (Docker)
+
+### PR Review Pipeline
+
+PRs receive automated AI code reviews from Gemini and Codex, followed by an agent that can automatically apply fixes from review feedback (with a 5-iteration safety limit per agent type). If CI stages fail, a separate failure-handler agent attempts automated fixes.
+
+### Runner Dependencies from template-repo
+
+The self-hosted runner provides the following binaries built from [template-repo](https://github.com/AndrewAltimit/template-repo). These are expected to be on `PATH`; workflows degrade gracefully if they are missing.
+
+| Binary | Source | Used By | Purpose |
+|--------|--------|---------|---------|
+| `github-agents` | `tools/rust/github-agents-cli` | `pr-validation.yml` | PR reviews (Gemini/Codex), iteration tracking |
+| `automation-cli` | `tools/rust/automation-cli` | `pr-validation.yml` | Agent review response, failure handler |
+
+These binaries are also available from [template-repo releases](https://github.com/AndrewAltimit/template-repo/releases).
+
+### Secrets
+
+| Secret | Required By | Purpose |
+|--------|-------------|---------|
+| `GITHUB_TOKEN` | all workflows | Standard GitHub token (automatic) |
+| `AGENT_TOKEN` | `pr-validation.yml` | Personal access token for agent commits (write access) |
+| `GOOGLE_API_KEY` | `pr-validation.yml` | Gemini API key for AI code reviews |
+| `GEMINI_API_KEY` | `pr-validation.yml` | Gemini API key (alternative) |
+
+### Release Pipeline
+
+Tagging a commit with `v*` (e.g., `v0.1.0`) triggers a release build:
+
+1. Full CI validation
+2. Containerized release build of all cargo-psp binaries
+3. GitHub Release creation with binaries attached and auto-generated changelog
+
 ## Structure
 
 ```
@@ -90,9 +143,35 @@ rust-psp/
 +-- psp/                # Core PSP crate (sceGu, sceCtrl, sys bindings, vram_alloc)
 +-- cargo-psp/          # Build tool: cross-compile + prxgen + pack-pbp -> EBOOT.PBP
 +-- examples/           # Sample programs (hello-world, cube, gu-background, etc.)
-+-- ci/                 # CI test harness and std verification
++-- ci/                 # CI test harness, std verification, PPSSPPHeadless Dockerfile
++-- docker/             # Docker images (rust-ci)
++-- .github/            # GitHub Actions workflows and composite actions
 +-- deny.toml           # cargo-deny license and advisory checks
 ```
+
+## Pre-built Binaries
+
+Pre-built binaries for all toolchain components are available from [GitHub Releases](../../releases). Each release includes:
+
+| Binary | Description |
+|--------|-------------|
+| `cargo-psp` | Cargo subcommand for building PSP homebrew (EBOOT.PBP) |
+| `prxgen` | PRX generator for PSP modules |
+| `pack-pbp` | PBP archive packer |
+| `mksfo` | SFO metadata file generator |
+| `prxmin` | PRX minimizer/stripper |
+
+```bash
+# Download from the latest release and install
+chmod +x cargo-psp-linux-* prxgen-linux-* pack-pbp-linux-* mksfo-linux-* prxmin-linux-*
+cp cargo-psp-linux-* ~/.cargo/bin/cargo-psp
+cp prxgen-linux-* ~/.cargo/bin/prxgen
+cp pack-pbp-linux-* ~/.cargo/bin/pack-pbp
+cp mksfo-linux-* ~/.cargo/bin/mksfo
+cp prxmin-linux-* ~/.cargo/bin/prxmin
+```
+
+Binaries are built in Docker containers via the `main-ci.yml` GitHub Actions workflow and attached to releases on `v*` tags.
 
 ## Dependencies
 
@@ -102,11 +181,13 @@ Rust **nightly** toolchain with the `rust-src` component:
 rustup default nightly && rustup component add rust-src
 ```
 
-The `cargo-psp` build tool is included in this repo. Build it from source:
+### Building from Source
+
+If you prefer to build the toolchain from source instead of using pre-built binaries:
 
 ```sh
 cd cargo-psp && cargo build --release
-# Binary at: target/release/cargo-psp
+# Binaries at: target/release/{cargo-psp,prxgen,pack-pbp,mksfo,prxmin}
 ```
 
 Or use it directly via `cargo run`:
@@ -116,7 +197,7 @@ cd /path/to/your/psp/project
 cargo +nightly psp --release
 ```
 
-**Do NOT run `cargo install cargo-psp`** -- this would install the upstream version from crates.io, not this fork. Use the local `cargo-psp/` directory.
+**Do NOT run `cargo install cargo-psp`** -- this would install the upstream version from crates.io, not this fork. Use the local `cargo-psp/` directory or download pre-built binaries from [Releases](../../releases).
 
 ## Running Examples
 

@@ -2,18 +2,17 @@
 #![no_main]
 
 use psp::sys::{
-    UtilityDialogCommon, UtilityMsgDialogParams, UtilityMsgDialogMode,
-    UtilityMsgDialogPressed, SystemParamLanguage, UtilityDialogButtonAccept,
-    UtilityMsgDialogOption, self,
-    DisplayPixelFormat, GuContextType, GuState, DepthFunc, FrontFaceDirection,
-    ShadingModel, GuSyncMode, GuSyncBehavior
+    self, DepthFunc, DisplayPixelFormat, FrontFaceDirection, GuContextType, GuState,
+    GuSyncBehavior, GuSyncMode, ShadingModel, SystemParamLanguage, UtilityDialogButtonAccept,
+    UtilityDialogCommon, UtilityMsgDialogMode, UtilityMsgDialogOption, UtilityMsgDialogParams,
+    UtilityMsgDialogPressed,
 };
 
 use core::ffi::c_void;
 
 psp::module!("sample_module", 1, 1);
 
-static mut LIST: psp::Align16<[u32; 262144]> = psp::Align16([0;262144]);
+static mut LIST: psp::Align16<[u32; 262144]> = psp::Align16([0; 262144]);
 const SCR_WIDTH: i32 = 480;
 const SCR_HEIGHT: i32 = 272;
 const BUF_WIDTH: i32 = 512;
@@ -21,10 +20,17 @@ const BUF_WIDTH: i32 = 512;
 unsafe fn setup_gu() {
     sys::sceGuInit();
     sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
-    sys::sceGuDrawBuffer(DisplayPixelFormat::Psm8888, core::ptr::null_mut(), BUF_WIDTH);
+    sys::sceGuDrawBuffer(
+        DisplayPixelFormat::Psm8888,
+        core::ptr::null_mut(),
+        BUF_WIDTH,
+    );
     sys::sceGuDispBuffer(SCR_WIDTH, SCR_HEIGHT, 0x88000 as *mut c_void, BUF_WIDTH);
     sys::sceGuDepthBuffer(0x110000 as *mut c_void, BUF_WIDTH);
-    sys::sceGuOffset(2048 - (SCR_WIDTH as u32 /2), 2048 - (SCR_HEIGHT as u32 /2));
+    sys::sceGuOffset(
+        2048 - (SCR_WIDTH as u32 / 2),
+        2048 - (SCR_HEIGHT as u32 / 2),
+    );
     sys::sceGuViewport(2048, 2048, SCR_WIDTH, SCR_HEIGHT);
     sys::sceGuDepthRange(0xc350, 0x2710);
     sys::sceGuScissor(0, 0, SCR_WIDTH, SCR_HEIGHT);
@@ -54,7 +60,7 @@ fn psp_main() {
         size: dialog_size as u32,
         language: SystemParamLanguage::English,
         button_accept: UtilityDialogButtonAccept::Cross, // X to accept
-        graphics_thread: 0x11, // magic number stolen from pspsdk example
+        graphics_thread: 0x11,                           // magic number stolen from pspsdk example
         access_thread: 0x13,
         font_thread: 0x12,
         sound_thread: 0x10,
@@ -76,17 +82,15 @@ fn psp_main() {
     };
 
     unsafe {
-        sys::sceUtilityMsgDialogInitStart(
-            &mut msg_dialog as *mut UtilityMsgDialogParams
-        );
+        sys::sceUtilityMsgDialogInitStart(&mut msg_dialog as *mut UtilityMsgDialogParams);
     }
 
     loop {
-        let status = unsafe {sys::sceUtilityMsgDialogGetStatus()};
+        let status = unsafe { sys::sceUtilityMsgDialogGetStatus() };
         match status {
-            2 => unsafe{sys::sceUtilityMsgDialogUpdate(1)},
-            3 => unsafe{sys::sceUtilityMsgDialogShutdownStart()},
-            0 => {break},
+            2 => unsafe { sys::sceUtilityMsgDialogUpdate(1) },
+            3 => unsafe { sys::sceUtilityMsgDialogShutdownStart() },
+            0 => break,
             _ => (),
         }
         unsafe {
@@ -97,5 +101,7 @@ fn psp_main() {
             sys::sceGuSwapBuffers();
         }
     }
-    unsafe { sys::sceKernelExitGame(); }
+    unsafe {
+        sys::sceKernelExitGame();
+    }
 }

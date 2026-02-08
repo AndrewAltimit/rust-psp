@@ -20,8 +20,14 @@ fn psp_main() {
         psp::dprintln!(
             "WLAN switch enabled: {}, WLAN active: {}, \
             MAC address: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-            wlan_power, wlan_switch,
-            buf[0], buf[1], buf[2], buf[3], buf[4], buf[5],
+            wlan_power,
+            wlan_switch,
+            buf[0],
+            buf[1],
+            buf[2],
+            buf[3],
+            buf[4],
+            buf[5],
         );
     }
 }

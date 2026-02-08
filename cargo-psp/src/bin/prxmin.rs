@@ -3,9 +3,9 @@ use clap::Parser;
 use goblin::{
     container::{Container, Ctx, Endian},
     elf::{
+        Elf, Header, ProgramHeader, SectionHeader,
         program_header::{PF_R, PF_W, PF_X, PT_LOAD},
         section_header::{SHT_NOBITS, SHT_NULL},
-        Elf, Header, ProgramHeader, SectionHeader,
     },
     elf32,
 };
@@ -145,15 +145,12 @@ fn run() -> Result<()> {
             .with_context(|| format!("relocation sh_info index {} out of bounds", old_idx))?
             .name;
 
-        let idx = names
-            .iter()
-            .position(|n| n == old_name)
-            .with_context(|| {
-                format!(
-                    "relocation target section '{}' not found in output",
-                    old_name
-                )
-            })?;
+        let idx = names.iter().position(|n| n == old_name).with_context(|| {
+            format!(
+                "relocation target section '{}' not found in output",
+                old_name
+            )
+        })?;
 
         s.header.to_mut().sh_info = idx as u32;
         s.header.to_mut().sh_link = 0;
@@ -171,7 +168,7 @@ fn run() -> Result<()> {
         if align > 0 {
             // Add padding.
             let padding = (align - ((body.len() + DATA_OFFSET) & (align - 1))) & (align - 1);
-            let padding = iter::repeat(0).take(padding);
+            let padding = iter::repeat_n(0, padding);
             body.extend(padding);
         }
 
