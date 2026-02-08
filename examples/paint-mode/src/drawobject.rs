@@ -28,7 +28,7 @@ impl DrawObject {
             Self::Circ(circ) => circ.primitive.diameter / 2,
             Self::Tri(tri) => {
                 ((tri.primitive.vertices[2].x - tri.primitive.vertices[1].x) / 2) as u32
-            }
+            },
             Self::Rect(rect) => rect.primitive.size.height / 2,
             Self::X(x) => ((x[0].primitive.end.y - x[0].primitive.start.y).abs() / 2) as u32,
         }
@@ -43,7 +43,7 @@ impl DrawObject {
                 for line in x {
                     line.draw(disp).unwrap();
                 }
-            }
+            },
         };
     }
 
@@ -51,18 +51,18 @@ impl DrawObject {
         match self {
             Self::Circ(circ) => {
                 circ.translate_mut(point);
-            }
+            },
             Self::Tri(tri) => {
                 tri.translate_mut(point);
-            }
+            },
             Self::Rect(rect) => {
                 rect.translate_mut(point);
-            }
+            },
             Self::X(x) => {
                 for line in x {
                     line.translate_mut(point);
                 }
-            }
+            },
         };
     }
 
@@ -73,7 +73,7 @@ impl DrawObject {
                 Self::Circ(circ) => {
                     circ.primitive.diameter += 2;
                     circ.primitive = circ.primitive.translate(Point::new(-1, -1));
-                }
+                },
                 Self::Tri(tri) => grow_triangle(tri),
                 Self::Rect(rect) => grow_rectangle(rect),
                 Self::X(x) => grow_x(x),
@@ -88,7 +88,7 @@ impl DrawObject {
                 Self::Circ(circ) => {
                     circ.primitive.diameter -= 2;
                     circ.primitive = circ.primitive.translate(Point::new(1, 1));
-                }
+                },
                 Self::Tri(tri) => shrink_triangle(tri),
                 Self::Rect(rect) => shrink_rectangle(rect),
                 Self::X(x) => shrink_x(x),

@@ -149,7 +149,7 @@ pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
                     };
 
                     rgba_to_bgra(rgba)
-                }
+                },
 
                 sys::DisplayPixelFormat::Psm5650 => {
                     let rgb565 = unsafe {
@@ -157,7 +157,7 @@ pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
                     };
 
                     rgb565_to_bgra(rgb565)
-                }
+                },
 
                 sys::DisplayPixelFormat::Psm5551 => {
                     let rgba5551 = unsafe {
@@ -165,7 +165,7 @@ pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
                     };
 
                     rgba5551_to_bgra(rgba5551)
-                }
+                },
 
                 sys::DisplayPixelFormat::Psm4444 => {
                     let rgba4444 = unsafe {
@@ -173,7 +173,7 @@ pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
                     };
 
                     rgba4444_to_bgra(rgba4444)
-                }
+                },
             };
 
             // Display buffer is flipped upside down.

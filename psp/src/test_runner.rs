@@ -179,10 +179,10 @@ impl<'a> TestRunner<'a> {
         match self.mode {
             TestRunnerMode::File(fd) | TestRunnerMode::Fifo(fd) => {
                 write_to_psp_output_fd(fd, &format!("{}", args));
-            }
+            },
             TestRunnerMode::Dprintln => {
                 crate::dprintln!("{}", args);
-            }
+            },
         }
     }
 
@@ -191,7 +191,7 @@ impl<'a> TestRunner<'a> {
             TestRunnerMode::File(fd) | TestRunnerMode::Fifo(fd) => {
                 close_psp_file(fd);
                 quit_game();
-            }
+            },
             TestRunnerMode::Dprintln => loop {
                 core::hint::spin_loop()
             },

@@ -1535,12 +1535,12 @@ pub unsafe extern "C" fn sceGuSetCallback(
         GuCallbackId::Signal => {
             old_callback = SETTINGS.sig;
             SETTINGS.sig = callback;
-        }
+        },
 
         GuCallbackId::Finish => {
             old_callback = SETTINGS.fin;
             SETTINGS.fin = callback;
-        }
+        },
     }
 
     old_callback
@@ -1748,7 +1748,7 @@ pub unsafe extern "C" fn sceGuFinish() -> i32 {
         GuContextType::Direct | GuContextType::Send => {
             send_command_i(GeCommand::Finish, 0);
             send_command_i_stall(GeCommand::End, 0);
-        }
+        },
 
         GuContextType::Call => {
             if CALL_MODE == 1 {
@@ -1758,7 +1758,7 @@ pub unsafe extern "C" fn sceGuFinish() -> i32 {
             } else {
                 send_command_i(GeCommand::Ret, 0);
             }
-        }
+        },
     }
 
     let size = ((*LIST).current as usize) - ((*LIST).start as usize);
@@ -1790,7 +1790,7 @@ pub unsafe extern "C" fn sceGuFinishId(id: u32) -> i32 {
         GuContextType::Direct | GuContextType::Send => {
             send_command_i(GeCommand::Finish, (id & 0xffff) as i32);
             send_command_i_stall(GeCommand::End, 0);
-        }
+        },
 
         GuContextType::Call => {
             if CALL_MODE == 1 {
@@ -1800,7 +1800,7 @@ pub unsafe extern "C" fn sceGuFinishId(id: u32) -> i32 {
             } else {
                 send_command_i(GeCommand::Ret, 0);
             }
-        }
+        },
     }
 
     let size = ((*LIST).current as usize) - ((*LIST).start as usize);
@@ -1882,7 +1882,7 @@ pub unsafe extern "C" fn sceGuSendList(
     let list_id = match mode {
         GuQueueMode::Head => {
             crate::sys::sceGeListEnQueueHead(list, null_mut(), callback, &mut args)
-        }
+        },
 
         GuQueueMode::Tail => crate::sys::sceGeListEnQueue(list, null_mut(), callback, &mut args),
     };
@@ -2141,7 +2141,7 @@ pub unsafe extern "C" fn sceGuEnable(state: GuState) {
                 GeCommand::Scissor2,
                 (context.scissor_end[1] << 10) | context.scissor_end[0],
             );
-        }
+        },
         GuState::StencilTest => send_command_i(GeCommand::StencilTestEnable, 1),
         GuState::Blend => send_command_i(GeCommand::AlphaBlendEnable, 1),
         GuState::CullFace => send_command_i(GeCommand::CullFaceEnable, 1),
@@ -2164,7 +2164,7 @@ pub unsafe extern "C" fn sceGuEnable(state: GuState) {
             let context = &mut CONTEXTS[CURR_CONTEXT as usize];
             context.fragment_2x = 0x10000;
             send_command_i(GeCommand::TexFunc, 0x10000 | context.texture_function);
-        }
+        },
     }
 
     if (state as u32) < 22 {
@@ -2191,7 +2191,7 @@ pub unsafe extern "C" fn sceGuDisable(state: GuState) {
                 GeCommand::Scissor2,
                 ((DRAW_BUFFER.height - 1) << 10) | (DRAW_BUFFER.width - 1),
             );
-        }
+        },
         GuState::StencilTest => send_command_i(GeCommand::StencilTestEnable, 0),
         GuState::Blend => send_command_i(GeCommand::AlphaBlendEnable, 0),
         GuState::CullFace => send_command_i(GeCommand::CullFaceEnable, 0),
@@ -2214,7 +2214,7 @@ pub unsafe extern "C" fn sceGuDisable(state: GuState) {
             let context = &mut CONTEXTS[CURR_CONTEXT as usize];
             context.fragment_2x = 0;
             send_command_i(GeCommand::TexFunc, context.texture_function);
-        }
+        },
     }
 
     if (state as u32) < 22 {
@@ -2359,13 +2359,13 @@ pub unsafe extern "C" fn sceGuClear(flags: ClearBuffer) {
         DisplayPixelFormat::Psm5650 => context.clear_color & 0xffffff,
         DisplayPixelFormat::Psm5551 => {
             (context.clear_color & 0xffffff) | (context.clear_stencil << 31)
-        }
+        },
         DisplayPixelFormat::Psm4444 => {
             (context.clear_color & 0xffffff) | (context.clear_stencil << 28)
-        }
+        },
         DisplayPixelFormat::Psm8888 => {
             (context.clear_color & 0xffffff) | (context.clear_stencil << 24)
-        }
+        },
     };
 
     let vertices;
@@ -3360,7 +3360,7 @@ pub unsafe extern "C" fn sceGuSetMatrix(type_: MatrixMode, matrix: &ScePspFMatri
             for i in 0..16 {
                 send_command_f(GeCommand::ProjMatrixData, *fmatrix.offset(i));
             }
-        }
+        },
 
         MatrixMode::View => {
             send_command_f(GeCommand::ViewMatrixNumber, 0.0);
@@ -3369,7 +3369,7 @@ pub unsafe extern "C" fn sceGuSetMatrix(type_: MatrixMode, matrix: &ScePspFMatri
                     send_command_f(GeCommand::ViewMatrixData, *fmatrix.offset(j + i * 4));
                 }
             }
-        }
+        },
 
         MatrixMode::Model => {
             send_command_f(GeCommand::WorldMatrixNumber, 0.0);
@@ -3378,7 +3378,7 @@ pub unsafe extern "C" fn sceGuSetMatrix(type_: MatrixMode, matrix: &ScePspFMatri
                     send_command_f(GeCommand::WorldMatrixData, *fmatrix.offset(j + i * 4));
                 }
             }
-        }
+        },
 
         MatrixMode::Texture => {
             send_command_f(GeCommand::TGenMatrixNumber, 0.0);
@@ -3387,7 +3387,7 @@ pub unsafe extern "C" fn sceGuSetMatrix(type_: MatrixMode, matrix: &ScePspFMatri
                     send_command_f(GeCommand::TGenMatrixData, *fmatrix.offset(j + i * 4));
                 }
             }
-        }
+        },
     }
 }
 
@@ -3545,20 +3545,20 @@ pub unsafe extern "C" fn sceGuDebugPrint(x: i32, mut y: i32, mut color: u32, mut
             uVar1 = (uVar1 | iVar2 as u32) << 5;
             color = (color & 0xff) >> 3;
             color |= uVar1;
-        }
+        },
         DisplayPixelFormat::Psm5551 => {
             iVar2 = (uVar1 >> 3) as i32;
             uVar1 = ((color >> 24) >> 7) << 0xf | (iVar4 as u32) << 10;
             uVar1 = (uVar1 | iVar2 as u32) << 5;
             color = (color & 0xff) >> 3;
             color |= uVar1;
-        }
-        DisplayPixelFormat::Psm8888 => {}
+        },
+        DisplayPixelFormat::Psm8888 => {},
         DisplayPixelFormat::Psm4444 => {
             uVar1 = ((color >> 0x18) >> 4) << 0xc | (uVar3 >> 4) << 8 | (uVar1 >> 4) << 4;
             color &= 0xff >> 4;
             color |= uVar1;
-        }
+        },
     }
     cur_char = *msg;
     while cur_char != b'\0' {
@@ -3635,10 +3635,10 @@ pub unsafe extern "C" fn sceGuDebugFlush() {
                                 if font_glyph & glyph_pos != 0 {
                                     *((pos as u32 + 0x4000_0000) as *mut u32) = color;
                                 }
-                            }
+                            },
                             _ => {
                                 *((pos as u32 + 0x4000_0002) as *mut u16) = color as u16;
-                            }
+                            },
                         }
                         x_pixel_counter -= 1;
                         glyph_pos <<= 1;

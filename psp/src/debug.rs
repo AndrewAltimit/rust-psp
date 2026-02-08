@@ -255,7 +255,7 @@ impl CharBuffer {
                 self.add(b' ');
                 self.add(b' ');
                 self.add(b' ');
-            }
+            },
 
             _ => {
                 if self.current_line().len == COLS {
@@ -265,7 +265,7 @@ impl CharBuffer {
                 let line = self.current_line();
                 line.chars[line.len] = c;
                 line.len += 1;
-            }
+            },
         }
     }
 

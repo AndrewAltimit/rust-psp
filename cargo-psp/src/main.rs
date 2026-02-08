@@ -177,7 +177,7 @@ fn main() -> Result<()> {
             MINIMUM_COMMIT_DATE
                 > CommitDate::parse(&date)
                     .context("could not parse `rustc --version` commit date")?
-        }
+        },
     };
 
     if old_version || old_commit {
@@ -207,7 +207,7 @@ fn main() -> Result<()> {
         Ok(_) => {
             eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, using \"build-std\".");
             "build-std"
-        }
+        },
         Err(_) => "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort",
     };
 
