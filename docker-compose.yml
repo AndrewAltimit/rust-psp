@@ -1,0 +1,165 @@
+services:
+  # ── CI Services ────────────────────────────────────────────────
+  rust-ci:
+    build:
+      context: .
+      dockerfile: docker/rust-ci.Dockerfile
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - .:/app
+      - cargo-registry-cache:/tmp/cargo
+    environment:
+      - CARGO_HOME=/tmp/cargo
+      - RUSTUP_HOME=/usr/local/rustup
+      - CARGO_INCREMENTAL=1
+      - CI=true
+    working_dir: /app
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    profiles:
+      - ci
+
+  ppsspp:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile-ppsspp
+    volumes:
+      - ./target/mipsel-sony-psp:/roms:ro
+    environment:
+      - PPSSPP_HEADLESS=${PPSSPP_HEADLESS:-1}
+    profiles:
+      - psp
+
+  # ── Agent MCP Services ────────────────────────────────────────
+  # These services use pre-built Docker images from template-repo.
+  # They are NOT buildable from this repo -- source code lives in
+  # template-repo under tools/mcp/mcp_<name>/.
+  #
+  # To build them (one-time, from template-repo checkout):
+  #   cd /path/to/template-repo
+  #   docker compose --profile services build
+  #
+  # Images follow the naming convention: template-repo-mcp-<name>:latest
+  # The .mcp.json file in this repo configures Claude Code to launch
+  # these services via `docker compose --profile services run`.
+
+  mcp-code-quality:
+    image: template-repo-mcp-code-quality:latest
+    volumes:
+      - ./:/app:ro
+      - /tmp:/tmp
+    environment:
+      - RUST_LOG=info
+      - MCP_CODE_QUALITY_ALLOWED_PATHS=/app,/workspace,/home
+    profiles:
+      - services
+
+  mcp-content-creation:
+    image: template-repo-mcp-content-creation:latest
+    volumes:
+      - ./outputs/mcp-content:/output
+      - .:/app:ro
+    environment:
+      - RUST_LOG=info
+      - MCP_OUTPUT_DIR=/output
+      - MCP_PROJECT_ROOT=/app
+      - MCP_HOST_PROJECT_ROOT=${PWD}
+    profiles:
+      - services
+
+  mcp-gemini:
+    image: template-repo-mcp-gemini:latest
+    volumes:
+      - ~/.gemini:/home/geminiuser/.gemini
+      - ./:/workspace:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GEMINI_API_KEY=${GOOGLE_API_KEY:-}
+      - GOOGLE_API_KEY=
+      - GEMINI_TIMEOUT=${GEMINI_TIMEOUT:-300}
+      - GEMINI_USE_CONTAINER=false
+      - HOME=/home/geminiuser
+    profiles:
+      - services
+
+  mcp-opencode:
+    image: template-repo-mcp-opencode:latest
+    volumes:
+      - ./:/app:ro
+    environment:
+      - PORT=8014
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENCODE_ENABLED=${OPENCODE_ENABLED:-true}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-qwen/qwen-2.5-coder-32b-instruct}
+    profiles:
+      - services
+
+  mcp-crush:
+    image: template-repo-mcp-crush:latest
+    volumes:
+      - ./:/app:ro
+    environment:
+      - PORT=8015
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - CRUSH_ENABLED=${CRUSH_ENABLED:-true}
+    profiles:
+      - services
+
+  mcp-codex:
+    image: template-repo-mcp-codex:latest
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - ./:/workspace:ro
+      - ~/.codex:/home/user/.codex:rw
+    environment:
+      - MODE=mcp
+      - PORT=8021
+      - CODEX_ENABLED=${CODEX_ENABLED:-true}
+      - CODEX_AUTH_PATH=/home/user/.codex/auth.json
+    profiles:
+      - services
+
+  mcp-github-board:
+    image: template-repo-mcp-github-board:latest
+    volumes:
+      - ./:/app:ro
+    environment:
+      - RUST_LOG=info
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY}
+      - GITHUB_PROJECT_NUMBER=${GITHUB_PROJECT_NUMBER:-1}
+    profiles:
+      - services
+
+  mcp-agentcore-memory:
+    image: template-repo-mcp-agentcore-memory:latest
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - .:/app:ro
+      - ${HOME}/.aws:/home/appuser/.aws:ro
+    environment:
+      - HOME=/home/appuser
+      - PYTHONUNBUFFERED=1
+      - PORT=8023
+      - MEMORY_PROVIDER=${MEMORY_PROVIDER:-chromadb}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - CHROMADB_COLLECTION=${CHROMADB_COLLECTION:-agent_memory}
+    profiles:
+      - services
+      - memory
+
+  mcp-reaction-search:
+    image: template-repo-mcp-reaction-search:latest
+    volumes:
+      - reaction-search-cache:/home/mcp/.cache
+    environment:
+      - RUST_LOG=info
+    profiles:
+      - services
+
+volumes:
+  cargo-registry-cache:
+  reaction-search-cache:
