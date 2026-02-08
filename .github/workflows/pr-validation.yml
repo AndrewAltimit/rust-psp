@@ -241,6 +241,10 @@ jobs:
               echo "::warning::Codex API unavailable"
               echo "status=unavailable" >> $GITHUB_OUTPUT
               exit 0
+            elif echo "$OUTPUT" | grep -qiE 'panicked at|thread.*panic'; then
+              echo "::warning::Codex review tool crashed - skipping review"
+              echo "status=tool_crash" >> $GITHUB_OUTPUT
+              exit 0
             else
               echo "status=failure" >> $GITHUB_OUTPUT
               exit $EXIT_CODE
