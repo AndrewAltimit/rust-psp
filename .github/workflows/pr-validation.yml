@@ -71,7 +71,9 @@ jobs:
         run: docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
 
       - name: Build with kernel feature
-        run: docker compose --profile ci run --rm rust-ci cargo +nightly build --features kernel
+        run: |
+          docker compose --profile ci run --rm -w /app/examples/kernel-mode rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
 
       - name: Build CI test EBOOT
         run: |
@@ -166,6 +168,10 @@ jobs:
             elif echo "$OUTPUT" | grep -qiE '503|502|service.?unavailable|ECONNREFUSED|ETIMEDOUT'; then
               echo "::warning::Gemini API unavailable - skipping review"
               echo "status=unavailable" >> $GITHUB_OUTPUT
+              exit 0
+            elif echo "$OUTPUT" | grep -qiE 'panicked at|thread.*panic'; then
+              echo "::warning::Gemini review tool crashed - skipping review"
+              echo "status=tool_crash" >> $GITHUB_OUTPUT
               exit 0
             else
               echo "status=failure" >> $GITHUB_OUTPUT

@@ -21,8 +21,6 @@
 //! All functions in this module require `feature = "kernel"` and the module
 //! must be declared with `psp::module_kernel!()`.
 
-use core::ffi::c_void;
-
 /// Uncached memory address mask.
 ///
 /// OR any physical address with this value to get the uncached equivalent.
