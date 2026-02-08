@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.4
+# PPSSPP Headless for CI testing of PSP EBOOTs
+
+FROM ubuntu:latest AS ppsspp
+
+ENV DEBIAN_FRONTEND="noninteractive"
+
+RUN apt-get -y update && apt-get install -y --no-install-recommends \
+    build-essential cmake git python3 \
+    libsdl2-dev libglew-dev libzip-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth=1 --recurse-submodules --shallow-submodules \
+    https://github.com/hrydgard/ppsspp /ppsspp
+
+WORKDIR /ppsspp/build-sdl
+RUN cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_SKIP_RPATH=ON \
+    -DHEADLESS=ON \
+    -DUSE_SYSTEM_LIBZIP=ON \
+    && make -j"$(nproc)" \
+    && make install
+
+ENTRYPOINT ["PPSSPPHeadless"]

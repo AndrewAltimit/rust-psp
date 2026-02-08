@@ -1,0 +1,64 @@
+# Pre-commit hooks for rust-psp
+# Run manually: pre-commit run --all-files
+# Install hooks: pre-commit install
+# Skip specific hooks: SKIP=shellcheck git commit
+# Auto-update hooks: pre-commit autoupdate
+
+repos:
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-json
+      - id: pretty-format-json
+        args: [--autofix, --no-sort-keys]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # GitHub Actions workflow linting
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.10
+    hooks:
+      - id: actionlint
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        types: [shell]
+        args: [-x]
+
+  # Rust formatting and linting (containerized)
+  - repo: local
+    hooks:
+      # cargo-psp workspace (stable toolchain)
+      - id: rust-fmt-cargo-psp
+        name: Rust format cargo-psp
+        entry: docker compose --profile ci run --rm rust-ci cargo fmt --manifest-path cargo-psp/Cargo.toml --all
+        language: system
+        files: '^cargo-psp/.*\.rs$'
+        pass_filenames: false
+
+      - id: rust-clippy-cargo-psp
+        name: Rust lint cargo-psp
+        entry: docker compose --profile ci run --rm rust-ci cargo clippy --manifest-path cargo-psp/Cargo.toml --all-targets -- -D warnings
+        language: system
+        files: '^cargo-psp/.*\.rs$'
+        pass_filenames: false
+
+      # psp workspace (nightly toolchain, format only -- clippy requires mipsel target)
+      - id: rust-fmt-psp
+        name: Rust format psp
+        entry: docker compose --profile ci run --rm rust-ci cargo +nightly fmt --all
+        language: system
+        files: '^psp/.*\.rs$'
+        pass_filenames: false

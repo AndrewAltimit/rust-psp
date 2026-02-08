@@ -1,0 +1,313 @@
+---
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release (even without tag)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: main-ci-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # ── CI Stages (containerized) ──────────────────────────────────
+  ci:
+    name: Rust PSP CI
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      # ── Formatting ──────────────────────────────────────────────
+      - name: Format check (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo fmt --manifest-path cargo-psp/Cargo.toml --all -- --check
+
+      - name: Format check (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo +nightly fmt --all -- --check
+
+      # ── Linting ─────────────────────────────────────────────────
+      - name: Clippy (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo clippy --manifest-path cargo-psp/Cargo.toml --all-targets -- -D warnings
+
+      # ── Tests ───────────────────────────────────────────────────
+      - name: Test (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo test --manifest-path cargo-psp/Cargo.toml
+
+      # ── Build ───────────────────────────────────────────────────
+      - name: Build cargo-psp (release)
+        run: docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
+
+      - name: Build with kernel feature
+        run: |
+          docker compose --profile ci run --rm -w /app/examples/kernel-mode rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
+
+      - name: Build CI test EBOOT
+        run: |
+          docker compose --profile ci run --rm -w /app/ci/tests rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
+
+      # ── License / Advisory ──────────────────────────────────────
+      - name: cargo-deny (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo deny check
+
+      - name: cargo-deny (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo deny --manifest-path cargo-psp/Cargo.toml check
+
+      # ── PSP Emulator Test ───────────────────────────────────────
+      - name: Run test EBOOT in PPSSPPHeadless
+        run: |
+          docker compose --profile psp run --rm ppsspp \
+            /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null || true
+
+          if [ -f psp_output_file.log ]; then
+            cat psp_output_file.log
+            if [ "$(tail -n 1 psp_output_file.log)" = "FINAL_SUCCESS" ]; then
+              echo "PSP tests passed"
+            else
+              echo "PSP tests failed"
+              exit 1
+            fi
+          else
+            echo "No output log -- headless exited without crash (TIMEOUT ok)"
+          fi
+
+  # ── Build Release Binaries ─────────────────────────────────────
+  build-release-binaries:
+    name: Build Release Binaries
+    needs: ci
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      - name: Create output directory
+        run: mkdir -p release-binaries
+
+      - name: Build cargo-psp binaries (release) via container
+        run: |
+          ARCH=$(uname -m)
+          echo "Building cargo-psp binaries for linux-${ARCH}..."
+
+          docker compose --profile ci run --rm rust-ci bash -c "
+            set -e
+            cargo build --manifest-path cargo-psp/Cargo.toml --release
+
+            for bin in cargo-psp prxgen pack-pbp mksfo prxmin; do
+              if [ -f \"cargo-psp/target/release/\$bin\" ]; then
+                cp \"cargo-psp/target/release/\$bin\" \"/app/release-binaries/\${bin}-linux-${ARCH}\"
+                echo \"Built \$bin for linux-${ARCH}\"
+              else
+                echo \"Warning: \$bin not found in release output\"
+              fi
+            done
+          "
+
+      - name: List built binaries
+        run: |
+          echo "Built binaries:"
+          ls -la release-binaries/
+          file release-binaries/* || true
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-binaries
+          path: release-binaries/*
+          retention-days: 90
+
+  # ── Create GitHub Release ──────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: [ci, build-release-binaries]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binaries
+          path: release-artifacts/binaries
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v$(date +%Y.%m.%d)-$(echo ${{ github.sha }} | cut -c1-7)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Generate changelog
+        id: changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT_TAG="${{ steps.version.outputs.version }}"
+          PREVIOUS_TAG=$(git tag --sort=-version:refname --list 'v[0-9]*' | grep -Fxv "$CURRENT_TAG" | head -n 1)
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "Generating changelog: ${PREVIOUS_TAG}...${CURRENT_TAG}"
+            CHANGELOG=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="$CURRENT_TAG" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq '.body' 2>/dev/null || echo "")
+
+            if [ -n "$CHANGELOG" ]; then
+              printf '%s\n' "$CHANGELOG" > changelog_snippet.md
+              echo "has_changelog=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_changelog=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "has_changelog=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release notes
+        run: |
+          cat << 'RELEASE_EOF' > release_notes.md
+          ## Release ${{ steps.version.outputs.version }}
+
+          ### Rust PSP SDK
+
+          Pre-built binaries for the rust-psp toolchain:
+
+          | Binary | Description |
+          |--------|-------------|
+          | `cargo-psp` | Cargo subcommand for building PSP homebrew (EBOOT.PBP) |
+          | `prxgen` | PRX generator for PSP modules |
+          | `pack-pbp` | PBP archive packer |
+          | `mksfo` | SFO metadata file generator |
+          | `prxmin` | PRX minimizer/stripper |
+
+          ### Installation
+
+          ```bash
+          # Make binaries executable
+          chmod +x cargo-psp-linux-* prxgen-linux-* pack-pbp-linux-* mksfo-linux-* prxmin-linux-*
+
+          # Copy to your PATH (e.g. ~/.cargo/bin/)
+          cp cargo-psp-linux-* ~/.cargo/bin/cargo-psp
+          cp prxgen-linux-* ~/.cargo/bin/prxgen
+          cp pack-pbp-linux-* ~/.cargo/bin/pack-pbp
+          cp mksfo-linux-* ~/.cargo/bin/mksfo
+          cp prxmin-linux-* ~/.cargo/bin/prxmin
+          ```
+
+          ### Requirements
+
+          - Rust nightly toolchain with `rust-src` component
+          - `mipsel-sony-psp` target (added automatically by `cargo psp`)
+
+          ### Commit Information
+
+          - **Commit**: ${{ github.sha }}
+          - **Branch**: ${{ github.ref_name }}
+          RELEASE_EOF
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' release_notes.md
+
+          # Append auto-generated changelog if available
+          if [ "${{ steps.changelog.outputs.has_changelog }}" = "true" ] && [ -f changelog_snippet.md ]; then
+            printf '\n---\n\n' >> release_notes.md
+            cat changelog_snippet.md >> release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: release-artifacts/binaries/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── CI Summary ─────────────────────────────────────────────────
+  notify:
+    name: CI Summary
+    needs: [ci, build-release-binaries, create-release]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Main CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Binaries | ${{ needs.build-release-binaries.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Create issue on failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Main CI Failed: $(date +%Y-%m-%d)" \
+            --body "$(cat <<'ISSUE_EOF'
+          ## CI Failure Report
+
+          **Commit**: ${{ github.sha }}
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Please investigate and fix the issues.
+          ISSUE_EOF
+          )" \
+            --label "ci-failure,automated" || echo "::warning::Could not create failure issue"

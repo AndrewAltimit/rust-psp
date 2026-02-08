@@ -1,0 +1,48 @@
+# Rust build artifacts
+target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PSP build artifacts
+*.PBP
+*.SFO
+*.PRX
+psp_output_file.log
+
+# Secrets
+*.key
+*.pem
+*.cert
+.env
+*.env.local
+
+# AI agent session/cache directories
+.codex/
+.opencode/
+.claude/
+.gemini/*
+!.gemini/settings.json
+.crush/
+
+# CI review artifacts
+codex-review.md
+gemini-review.md
+
+# Docker overrides
+docker-compose.override.yml
+
+# Node (for agent tooling)
+node_modules/
+
+# Scratch
+scratch/
+.local/

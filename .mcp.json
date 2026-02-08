@@ -1,0 +1,167 @@
+{
+  "mcpServers": {
+    "code-quality": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-code-quality",
+        "mcp-code-quality",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "content-creation": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-content-creation",
+        "mcp-content-creation",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "gemini": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-gemini",
+        "mcp-gemini",
+        "--mode",
+        "stdio"
+      ],
+      "env": {
+        "GEMINI_TIMEOUT": "300",
+        "GEMINI_USE_CONTAINER": "false"
+      }
+    },
+    "opencode": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-opencode",
+        "mcp-opencode",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "crush": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-crush",
+        "mcp-crush",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "codex": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-codex",
+        "mcp-codex",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "github-board": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-github-board",
+        "mcp-github-board",
+        "--mode",
+        "stdio"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "${GITHUB_REPOSITORY}",
+        "GITHUB_PROJECT_NUMBER": "1"
+      }
+    },
+    "agentcore-memory": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--env-file",
+        "./.env",
+        "--profile",
+        "memory",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-agentcore-memory",
+        "mcp-agentcore-memory",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "reaction-search": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-reaction-search",
+        "--mode",
+        "stdio"
+      ]
+    }
+  }
+}

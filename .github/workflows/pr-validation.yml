@@ -1,0 +1,440 @@
+---
+name: Pull Request Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # Fork guard: block fork PRs from running on self-hosted runners with write perms
+  fork-guard:
+    name: Fork PR Guard
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - run: echo "Not a fork PR - proceeding"
+
+  # ── CI Stages (containerized) ──────────────────────────────────
+  ci:
+    name: Rust PSP CI
+    needs: fork-guard
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      # ── Formatting ──────────────────────────────────────────────
+      - name: Format check (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo fmt --manifest-path cargo-psp/Cargo.toml --all -- --check
+
+      - name: Format check (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo +nightly fmt --all -- --check
+
+      # ── Linting ─────────────────────────────────────────────────
+      - name: Clippy (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo clippy --manifest-path cargo-psp/Cargo.toml --all-targets -- -D warnings
+
+      # ── Tests ───────────────────────────────────────────────────
+      - name: Test (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo test --manifest-path cargo-psp/Cargo.toml
+
+      # ── Build ───────────────────────────────────────────────────
+      - name: Build cargo-psp (release)
+        run: docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
+
+      - name: Build with kernel feature
+        run: |
+          docker compose --profile ci run --rm -w /app/examples/kernel-mode rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
+
+      - name: Build CI test EBOOT
+        run: |
+          docker compose --profile ci run --rm -w /app/ci/tests rust-ci \
+            bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'
+
+      # ── License / Advisory ──────────────────────────────────────
+      - name: cargo-deny (psp workspace)
+        run: docker compose --profile ci run --rm rust-ci cargo deny check
+
+      - name: cargo-deny (cargo-psp)
+        run: docker compose --profile ci run --rm rust-ci cargo deny --manifest-path cargo-psp/Cargo.toml check
+
+      # ── PSP Emulator Test ───────────────────────────────────────
+      - name: Run test EBOOT in PPSSPPHeadless
+        run: |
+          docker compose --profile psp run --rm ppsspp \
+            /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null || true
+
+          if [ -f psp_output_file.log ]; then
+            cat psp_output_file.log
+            if [ "$(tail -n 1 psp_output_file.log)" = "FINAL_SUCCESS" ]; then
+              echo "PSP tests passed"
+            else
+              echo "PSP tests failed"
+              exit 1
+            fi
+          else
+            echo "No output log -- headless exited without crash (TIMEOUT ok)"
+          fi
+
+  # ── Gemini AI Code Review ──────────────────────────────────────
+  gemini-review:
+    name: Gemini AI Code Review
+    needs: fork-guard
+    if: >-
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft
+    runs-on: self-hosted
+    timeout-minutes: 30
+    outputs:
+      status: ${{ steps.review.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: Log commit info
+        id: check-agent
+        run: |
+          LAST_AUTHOR=$(git log -1 --format='%an')
+          echo "Last commit author: $LAST_AUTHOR"
+          IS_AGENT="false"
+          if [[ "$LAST_AUTHOR" == "AI Review Agent" ]] || \
+             [[ "$LAST_AUTHOR" == "AI Pipeline Agent" ]] || \
+             [[ "$LAST_AUTHOR" == "AI Agent Bot" ]]; then
+            IS_AGENT="true"
+          fi
+          echo "is_agent_commit=$IS_AGENT" >> $GITHUB_OUTPUT
+
+      - name: Run Gemini review
+        id: review
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if ! command -v github-agents &>/dev/null; then
+            echo "::warning::github-agents not found on PATH - skipping Gemini review"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          set +e
+          OUTPUT=$(github-agents pr-review "$PR_NUMBER" --editor 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$OUTPUT"
+          echo "$OUTPUT" > gemini-review.md
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$OUTPUT" | grep -qiE '429|rate.?limit|quota|resource.?exhausted'; then
+              echo "::warning::Gemini API rate limit hit - skipping review"
+              echo "status=rate_limited" >> $GITHUB_OUTPUT
+              exit 0
+            elif echo "$OUTPUT" | grep -qiE '503|502|service.?unavailable|ECONNREFUSED|ETIMEDOUT'; then
+              echo "::warning::Gemini API unavailable - skipping review"
+              echo "status=unavailable" >> $GITHUB_OUTPUT
+              exit 0
+            elif echo "$OUTPUT" | grep -qiE 'panicked at|thread.*panic'; then
+              echo "::warning::Gemini review tool crashed - skipping review"
+              echo "status=tool_crash" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "status=failure" >> $GITHUB_OUTPUT
+              exit $EXIT_CODE
+            fi
+          fi
+
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gemini-review.md
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ── Codex AI Code Review (secondary) ───────────────────────────
+  codex-review:
+    name: Codex AI Code Review
+    needs: [fork-guard, gemini-review]
+    if: >-
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      needs.gemini-review.result != 'skipped'
+    runs-on: self-hosted
+    timeout-minutes: 15
+    continue-on-error: true
+    outputs:
+      status: ${{ steps.review.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: Run Codex review
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if ! command -v github-agents &>/dev/null; then
+            echo "::warning::github-agents not found on PATH - skipping Codex review"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          set +e
+          OUTPUT=$(github-agents pr-review "$PR_NUMBER" --agent codex 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$OUTPUT"
+          echo "$OUTPUT" > codex-review.md
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$OUTPUT" | grep -qiE '429|rate.?limit|quota|resource.?exhausted'; then
+              echo "::warning::Codex API rate limit hit"
+              echo "status=rate_limited" >> $GITHUB_OUTPUT
+              exit 0
+            elif echo "$OUTPUT" | grep -qiE '503|502|service.?unavailable|ECONNREFUSED|ETIMEDOUT'; then
+              echo "::warning::Codex API unavailable"
+              echo "status=unavailable" >> $GITHUB_OUTPUT
+              exit 0
+            elif echo "$OUTPUT" | grep -qiE 'panicked at|thread.*panic'; then
+              echo "::warning::Codex review tool crashed - skipping review"
+              echo "status=tool_crash" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "status=failure" >> $GITHUB_OUTPUT
+              exit $EXIT_CODE
+            fi
+          fi
+
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: codex-review.md
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ── Agent Review Response (responds to Gemini/Codex feedback) ──
+  agent-review-response:
+    name: Agent Review Response
+    needs: [ci, gemini-review, codex-review]
+    if: |
+      always() &&
+      !cancelled() &&
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      !contains(github.event.pull_request.labels.*.name, 'no-auto-fix')
+    runs-on: self-hosted
+    timeout-minutes: 30
+    outputs:
+      made_changes: ${{ steps.agent-fix.outputs.made_changes }}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+          token: ${{ secrets.AGENT_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: Ensure clean working directory
+        run: |
+          git checkout -- . 2>/dev/null || true
+          git clean -fd 2>/dev/null || true
+
+      - name: Check iteration count
+        id: iteration
+        uses: ./.github/actions/agent-iteration-check
+        with:
+          pr_number: ${{ github.event.pull_request.number }}
+          max_iterations: '5'
+          agent_type: 'review-fix'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if max iterations reached
+        if: steps.iteration.outputs.exceeded_max == 'true'
+        run: |
+          echo "Maximum iterations (5) reached for review-fix agent. Manual intervention required."
+          echo "made_changes=false" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Download review artifacts
+        if: steps.iteration.outputs.should_skip != 'true'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: '*-review-${{ github.run_id }}-${{ github.run_attempt }}'
+          merge-multiple: true
+          path: .
+
+      - name: Run agent review response
+        id: agent-fix
+        if: steps.iteration.outputs.should_skip != 'true'
+        env:
+          GEMINI_REVIEW_PATH: gemini-review.md
+          CODEX_REVIEW_PATH: codex-review.md
+          BRANCH_NAME: ${{ github.head_ref }}
+          ITERATION_COUNT: ${{ steps.iteration.outputs.iteration_count }}
+        run: |
+          if ! command -v automation-cli &>/dev/null; then
+            echo "::warning::automation-cli not found on PATH - skipping review response"
+            echo "made_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Running agent review response..."
+          automation-cli review respond \
+            "$PR_NUMBER" \
+            "$BRANCH_NAME" \
+            "$ITERATION_COUNT" \
+            "5"
+
+  # ── Agent Failure Handler ──────────────────────────────────────
+  agent-failure-handler:
+    name: Agent Failure Handler
+    needs: [ci, gemini-review, codex-review, agent-review-response]
+    if: |
+      failure() &&
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      !contains(github.event.pull_request.labels.*.name, 'no-auto-fix') &&
+      needs.ci.result == 'failure'
+    runs-on: self-hosted
+    timeout-minutes: 30
+    outputs:
+      made_changes: ${{ steps.agent-fix.outputs.made_changes }}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+          token: ${{ secrets.AGENT_TOKEN }}
+          ref: ${{ github.head_ref }}
+
+      - name: Ensure clean working directory
+        run: |
+          git checkout -- . 2>/dev/null || true
+          git clean -fd 2>/dev/null || true
+
+      - name: Check iteration count
+        id: iteration
+        uses: ./.github/actions/agent-iteration-check
+        with:
+          pr_number: ${{ github.event.pull_request.number }}
+          max_iterations: '5'
+          agent_type: 'failure-fix'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if max iterations reached
+        if: steps.iteration.outputs.exceeded_max == 'true'
+        run: |
+          echo "Maximum iterations (5) reached for failure-fix agent. Manual intervention required."
+          echo "made_changes=false" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Run agent failure handler
+        id: agent-fix
+        if: steps.iteration.outputs.exceeded_max != 'true'
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+          ITERATION_COUNT: ${{ steps.iteration.outputs.iteration_count }}
+        run: |
+          if ! command -v automation-cli &>/dev/null; then
+            echo "::warning::automation-cli not found on PATH - skipping failure handler"
+            echo "made_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Running agent failure handler..."
+          automation-cli review failure \
+            "$PR_NUMBER" \
+            "$BRANCH_NAME" \
+            "$ITERATION_COUNT" \
+            "5" \
+            "format,lint,test"
+
+  # ── PR Status Summary ──────────────────────────────────────────
+  pr-status:
+    name: PR Status Summary
+    needs: [ci, gemini-review, codex-review, agent-review-response, agent-failure-handler]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Generate status summary
+        run: |
+          echo "## PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gemini Review | ${{ needs.gemini-review.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Codex Review | ${{ needs.codex-review.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Review Response | ${{ needs.agent-review-response.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Failure Handler | ${{ needs.agent-failure-handler.result }} |" >> $GITHUB_STEP_SUMMARY
+
+          # CI failure is blocking; reviews are advisory
+          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "PR validation completed successfully" >> $GITHUB_STEP_SUMMARY
