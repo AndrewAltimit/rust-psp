@@ -1,7 +1,8 @@
 //! Power and clock management for the PSP.
 //!
-//! Provides clock speed control, battery monitoring, and AC power
-//! detection. Wraps `scePower*` syscalls into safe, ergonomic functions.
+//! Provides clock speed control, battery monitoring, AC power detection,
+//! power event callbacks, and idle-timer control. Wraps `scePower*`
+//! syscalls into safe, ergonomic functions.
 
 /// CPU and bus clock frequencies in MHz.
 #[derive(Debug, Clone, Copy)]
@@ -96,4 +97,101 @@ pub fn battery_info() -> BatteryInfo {
 /// Check if the PSP is running on AC (mains) power.
 pub fn is_ac_power() -> bool {
     (unsafe { crate::sys::scePowerIsPowerOnline() }) == 1
+}
+
+// ── Power event callbacks ────────────────────────────────────────────
+
+/// Register a power event callback.
+///
+/// Spawns a callback thread that sleeps with callback processing enabled.
+/// The `handler` is called when power events occur (suspend, resume, AC
+/// state changes, battery level changes, etc.).
+///
+/// The handler signature matches `sceKernelCreateCallback`'s expected
+/// callback: `fn(count: i32, power_info: i32, common: *mut c_void) -> i32`.
+/// The `power_info` parameter contains [`crate::sys::PowerInfo`] flags.
+///
+/// Returns a handle that unregisters the callback on drop.
+#[cfg(not(feature = "stub-only"))]
+pub fn on_power_event(
+    handler: unsafe extern "C" fn(i32, i32, *mut core::ffi::c_void) -> i32,
+) -> Result<PowerCallbackHandle, PowerError> {
+    use core::ffi::c_void;
+
+    let cbid = unsafe {
+        crate::sys::sceKernelCreateCallback(b"power_cb\0".as_ptr(), handler, core::ptr::null_mut())
+    };
+    if cbid.0 < 0 {
+        return Err(PowerError(cbid.0));
+    }
+
+    let slot = unsafe { crate::sys::scePowerRegisterCallback(-1, cbid) };
+    if slot < 0 {
+        return Err(PowerError(slot));
+    }
+
+    // Spawn a thread that sleeps with CB processing enabled.
+    unsafe extern "C" fn sleep_thread(_args: usize, _argp: *mut c_void) -> i32 {
+        unsafe { crate::sys::sceKernelSleepThreadCB() };
+        0
+    }
+
+    let thid = unsafe {
+        crate::sys::sceKernelCreateThread(
+            b"power_cb_thread\0".as_ptr(),
+            sleep_thread,
+            crate::DEFAULT_THREAD_PRIORITY,
+            4096,
+            crate::sys::ThreadAttributes::empty(),
+            core::ptr::null_mut(),
+        )
+    };
+    if thid.0 < 0 {
+        unsafe { crate::sys::scePowerUnregisterCallback(slot) };
+        return Err(PowerError(thid.0));
+    }
+
+    let ret = unsafe { crate::sys::sceKernelStartThread(thid, 0, core::ptr::null_mut()) };
+    if ret < 0 {
+        unsafe { crate::sys::scePowerUnregisterCallback(slot) };
+        return Err(PowerError(ret));
+    }
+
+    Ok(PowerCallbackHandle {
+        slot,
+        _cb_id: cbid,
+        thread_id: thid,
+    })
+}
+
+/// RAII handle for a registered power callback.
+///
+/// Unregisters the callback and terminates the background thread on drop.
+#[cfg(not(feature = "stub-only"))]
+pub struct PowerCallbackHandle {
+    slot: i32,
+    _cb_id: crate::sys::SceUid,
+    thread_id: crate::sys::SceUid,
+}
+
+#[cfg(not(feature = "stub-only"))]
+impl Drop for PowerCallbackHandle {
+    fn drop(&mut self) {
+        unsafe {
+            crate::sys::scePowerUnregisterCallback(self.slot);
+            crate::sys::sceKernelTerminateDeleteThread(self.thread_id);
+        }
+    }
+}
+
+/// Reset the idle timer to prevent the PSP from auto-sleeping.
+///
+/// Call this once per frame in your main loop.
+pub fn prevent_sleep() {
+    unsafe { crate::sys::scePowerTick(crate::sys::PowerTick::All) };
+}
+
+/// Reset the display idle timer to prevent the screen from turning off.
+pub fn prevent_display_off() {
+    unsafe { crate::sys::scePowerTick(crate::sys::PowerTick::Display) };
 }

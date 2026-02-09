@@ -44,13 +44,20 @@ pub mod audio_mixer;
 pub mod cache;
 #[cfg(not(feature = "stub-only"))]
 pub mod callback;
+#[cfg(not(feature = "stub-only"))]
+pub mod config;
 pub mod dialog;
 pub mod display;
 pub mod dma;
 mod eabi;
+#[cfg(not(feature = "stub-only"))]
+pub mod font;
 pub mod framebuffer;
+pub mod gu_ext;
 #[cfg(feature = "kernel")]
 pub mod hw;
+#[cfg(not(feature = "stub-only"))]
+pub mod image;
 pub mod input;
 pub mod io;
 pub mod math;
@@ -68,6 +75,9 @@ pub mod test_runner;
 #[cfg(not(feature = "stub-only"))]
 pub mod thread;
 pub mod time;
+#[cfg(not(feature = "stub-only"))]
+pub mod timer;
+pub mod usb;
 #[cfg(not(feature = "stub-only"))]
 pub mod vram_alloc;
 pub mod wlan;
