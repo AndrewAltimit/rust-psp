@@ -8,4 +8,4 @@ license = "MIT"
 [dependencies]
 psp = { path = "../../psp", features = ["embedded-graphics"] }
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"]}
-tinybmp = { version = "0.3.1" }
+tinybmp = { version = "0.7.0" }
