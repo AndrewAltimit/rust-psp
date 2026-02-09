@@ -25,6 +25,7 @@ use crate::sys::{
 };
 use alloc::boxed::Box;
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // ── ThreadError ─────────────────────────────────────────────────────
 
@@ -121,6 +122,17 @@ impl ThreadBuilder {
     }
 }
 
+// ── ThreadPayload ───────────────────────────────────────────────────
+
+/// Shared state between the trampoline and `JoinHandle` to prevent
+/// double-free of the closure when a thread finishes between the
+/// zero-timeout wait check and `sceKernelTerminateDeleteThread` in Drop.
+struct ThreadPayload {
+    closure: Option<Box<dyn FnOnce() -> i32 + Send + 'static>>,
+    /// Set to `true` by the trampoline after consuming the closure.
+    consumed: AtomicBool,
+}
+
 // ── spawn ───────────────────────────────────────────────────────────
 
 /// Spawn a thread with default settings.
@@ -145,9 +157,11 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
     attributes: ThreadAttributes,
     f: F,
 ) -> Result<JoinHandle, ThreadError> {
-    // Box the closure and convert to a raw pointer for the trampoline.
-    let boxed: Box<dyn FnOnce() -> i32 + Send + 'static> = Box::new(f);
-    let raw = Box::into_raw(Box::new(boxed));
+    // Box the closure into a ThreadPayload with an atomic flag.
+    let payload = Box::into_raw(Box::new(ThreadPayload {
+        closure: Some(Box::new(f)),
+        consumed: AtomicBool::new(false),
+    }));
 
     let thid = unsafe {
         sceKernelCreateThread(
@@ -161,27 +175,27 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
     };
 
     if thid.0 < 0 {
-        // Thread creation failed — reclaim the closure.
+        // Thread creation failed — reclaim the payload.
         unsafe {
-            drop(Box::from_raw(raw));
+            drop(Box::from_raw(payload));
         }
         return Err(ThreadError(thid.0));
     }
 
-    // Start the thread, passing the closure pointer as the argument.
+    // Start the thread, passing the payload pointer as the argument.
     let ret = unsafe {
         sceKernelStartThread(
             thid,
             core::mem::size_of::<*mut c_void>(),
-            &raw as *const _ as *mut c_void,
+            &payload as *const _ as *mut c_void,
         )
     };
 
     if ret < 0 {
-        // Start failed — clean up the thread and closure.
+        // Start failed — clean up the thread and payload.
         unsafe {
             sceKernelDeleteThread(thid);
-            drop(Box::from_raw(raw));
+            drop(Box::from_raw(payload));
         }
         return Err(ThreadError(ret));
     }
@@ -189,27 +203,28 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
     Ok(JoinHandle {
         thid,
         joined: false,
-        closure_ptr: raw,
+        payload,
     })
 }
 
 /// C-callable trampoline that runs the boxed closure.
 ///
 /// The PSP passes `argp` pointing to a buffer containing the raw pointer
-/// to our double-boxed closure (`*mut Box<dyn FnOnce() -> i32>`).
-/// We double-box because `Box::into_raw` on a trait object yields a fat
-/// pointer (data + vtable), which doesn't fit in the 4-byte thread arg
-/// on MIPS32. The outer `Box` collapses it to a thin pointer.
+/// to our `ThreadPayload`. The payload holds the closure and an atomic
+/// flag that we set after consuming the closure, preventing the
+/// `JoinHandle::drop` from double-freeing it.
 ///
 /// Panics are caught with `catch_unwind` to prevent unwinding across the
 /// `extern "C"` boundary, which would abort the process.
 unsafe extern "C" fn trampoline(_args: usize, argp: *mut c_void) -> i32 {
-    // `argp` points to a buffer containing a thin pointer of type
-    // `*mut Box<dyn FnOnce() -> i32 + Send + 'static>`.
-    let ptr_to_raw = argp as *const *mut Box<dyn FnOnce() -> i32 + Send + 'static>;
-    let raw = unsafe { *ptr_to_raw };
-    // Reconstruct the outer Box, then unbox to get the inner trait object.
-    let closure: Box<dyn FnOnce() -> i32 + Send + 'static> = *unsafe { Box::from_raw(raw) };
+    // `argp` points to a buffer containing a pointer to ThreadPayload.
+    let ptr_to_payload = argp as *const *mut ThreadPayload;
+    let payload = unsafe { &mut **ptr_to_payload };
+    // Take the closure out of the payload.
+    let closure = payload.closure.take().unwrap();
+    // Mark as consumed BEFORE running, so Drop won't try to free it
+    // even if the thread is terminated mid-execution.
+    payload.consumed.store(true, Ordering::Release);
     match crate::catch_unwind(core::panic::AssertUnwindSafe(closure)) {
         Ok(code) => code,
         Err(_) => -0x7FFF_FFFF, // panic sentinel
@@ -225,12 +240,13 @@ unsafe extern "C" fn trampoline(_args: usize, argp: *mut c_void) -> i32 {
 pub struct JoinHandle {
     thid: SceUid,
     joined: bool,
-    /// Raw pointer to the double-boxed closure, kept so we can free it
-    /// if the thread is terminated without running its trampoline.
-    closure_ptr: *mut Box<dyn FnOnce() -> i32 + Send + 'static>,
+    /// Shared payload containing the closure and a "consumed" flag.
+    /// The trampoline sets `consumed` after taking the closure, so
+    /// Drop can safely check whether it needs to free the closure.
+    payload: *mut ThreadPayload,
 }
 
-// SAFETY: The closure pointer is only accessed after the thread is
+// SAFETY: The payload pointer is only accessed after the thread is
 // terminated (in drop) or after it has finished (in join). The handle
 // itself can safely be sent to another thread.
 unsafe impl Send for JoinHandle {}
@@ -242,12 +258,13 @@ impl JoinHandle {
         if ret < 0 {
             return Err(ThreadError(ret));
         }
-        // The trampoline has already freed the closure.
-        self.closure_ptr = core::ptr::null_mut();
+        self.joined = true;
         // Retrieve the actual thread exit status.
         let exit_status = unsafe { sceKernelGetThreadExitStatus(self.thid) };
-        self.joined = true;
         let del = unsafe { sceKernelDeleteThread(self.thid) };
+        // Free the payload (closure was already consumed by trampoline).
+        unsafe { drop(Box::from_raw(self.payload)) };
+        self.payload = core::ptr::null_mut();
         if del < 0 {
             return Err(ThreadError(del));
         }
@@ -262,32 +279,22 @@ impl JoinHandle {
 
 impl Drop for JoinHandle {
     fn drop(&mut self) {
-        if !self.joined {
-            // Check if the thread has already exited (trampoline ran and freed
-            // the closure). A zero timeout returns immediately.
-            let mut timeout: u32 = 0;
-            let wait_ret = unsafe { sceKernelWaitThreadEnd(self.thid, &mut timeout) };
-            let thread_finished = wait_ret >= 0;
-
-            if thread_finished {
-                // Thread exited naturally — trampoline already freed the
-                // closure. Just delete the thread object.
-                unsafe {
-                    sceKernelDeleteThread(self.thid);
-                }
-            } else {
-                // Thread is still running — forcibly terminate and delete it.
-                unsafe {
-                    sceKernelTerminateDeleteThread(self.thid);
-                }
-                // Free the closure that the trampoline never got to run.
-                if !self.closure_ptr.is_null() {
-                    unsafe {
-                        drop(Box::from_raw(self.closure_ptr));
-                    }
-                }
-            }
+        if self.joined || self.payload.is_null() {
+            return;
         }
+        // Forcibly terminate and delete the thread. This is synchronous:
+        // after it returns the thread is dead.
+        unsafe { sceKernelTerminateDeleteThread(self.thid) };
+        // Check the atomic flag to determine if the trampoline already
+        // consumed the closure. This prevents a double-free race where
+        // the thread finishes between the wait-check and terminate.
+        let payload = unsafe { Box::from_raw(self.payload) };
+        if payload.consumed.load(Ordering::Acquire) {
+            // Trampoline already took the closure — nothing more to free.
+            // The payload Box itself is freed when `payload` drops here.
+        }
+        // If !consumed, the closure is still in payload.closure and will
+        // be dropped when `payload` drops here.
     }
 }
 
