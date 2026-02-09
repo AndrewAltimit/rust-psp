@@ -25,6 +25,12 @@ impl Framebuffer {
     }
 }
 
+impl Default for Framebuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DrawTarget for Framebuffer {
     type Error = core::convert::Infallible;
     type Color = Rgb888;
@@ -51,7 +57,7 @@ impl Framebuffer {
     fn draw_pixel(&mut self, pixel: Pixel<Rgb888>) -> Result<(), core::convert::Infallible> {
         let Pixel(coord, color) = pixel;
 
-        if let Ok((x @ 0..=SCREEN_WIDTH, y @ 0..=SCREEN_HEIGHT)) = coord.try_into() {
+        if let Ok((x @ 0..SCREEN_WIDTH, y @ 0..SCREEN_HEIGHT)) = coord.try_into() {
             unsafe {
                 let ptr = (self.vram_base as *mut u32)
                     .offset(x as isize)

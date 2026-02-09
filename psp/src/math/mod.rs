@@ -1,64 +1,45 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn fminf(x: f32, y: f32) -> f32 {
-    let out: f32;
-    if x.is_nan() && !y.is_nan() {
-        out = y;
-    } else if y.is_nan() && !x.is_nan() {
-        out = x;
-    } else if x.is_nan() && y.is_nan() {
-        out = core::f32::NAN;
-    } else {
-        vfpu_asm! (
-            "mfc1 {tmp1}, {x}",
-            "mfc1 {tmp2}, {y}",
-            "mtv {tmp1}, S000",
-            "mtv {tmp2}, S001",
-            "vmin.s S000, S000, S001",
-            "mfv {tmp1}, S000",
-            "mtc1 {tmp1}, {out}",
-            "nop",
-            x = in(freg) x,
-            y = in(freg) y,
-            tmp1 = out(reg) _,
-            tmp2 = out(reg) _,
-            out = out(freg) out,
-            options(nostack, nomem),
-        );
-    }
-    out
+/// Generates a NaN-aware f32 min/max function using the VFPU.
+///
+/// Both operands are checked for NaN before dispatching to the VFPU instruction.
+/// If exactly one operand is NaN, the non-NaN value is returned (IEEE 754 semantics).
+macro_rules! nan_aware_vfpu_op {
+    ($name:ident, $vfpu_op:literal) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(x: f32, y: f32) -> f32 {
+            let out: f32;
+            if x.is_nan() && !y.is_nan() {
+                out = y;
+            } else if y.is_nan() && !x.is_nan() {
+                out = x;
+            } else if x.is_nan() && y.is_nan() {
+                out = core::f32::NAN;
+            } else {
+                vfpu_asm!(
+                    "mfc1 {tmp1}, {x}",
+                    "mfc1 {tmp2}, {y}",
+                    "mtv {tmp1}, S000",
+                    "mtv {tmp2}, S001",
+                    $vfpu_op,
+                    "mfv {tmp1}, S000",
+                    "mtc1 {tmp1}, {out}",
+                    "nop",
+                    x = in(freg) x,
+                    y = in(freg) y,
+                    tmp1 = out(reg) _,
+                    tmp2 = out(reg) _,
+                    out = out(freg) out,
+                    options(nostack, nomem),
+                );
+            }
+            out
+        }
+    };
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn fmaxf(x: f32, y: f32) -> f32 {
-    let out: f32;
-    if x.is_nan() && !y.is_nan() {
-        out = y;
-    } else if y.is_nan() && !x.is_nan() {
-        out = x;
-    } else if x.is_nan() && y.is_nan() {
-        out = core::f32::NAN;
-    } else {
-        vfpu_asm! (
-            "mfc1 {tmp1}, {x}",
-            "mfc1 {tmp2}, {y}",
-            "mtv {tmp1}, S000",
-            "mtv {tmp2}, S001",
-            "vmax.s S000, S000, S001",
-            "mfv {tmp1}, S000",
-            "mtc1 {tmp1}, {out}",
-            "nop",
-            x = in(freg) x,
-            y = in(freg) y,
-            tmp1 = out(reg) _,
-            tmp2 = out(reg) _,
-            out = out(freg) out,
-            options(nostack, nomem),
-        );
-    }
-    out
-}
+nan_aware_vfpu_op!(fminf, "vmin.s S000, S000, S001");
+nan_aware_vfpu_op!(fmaxf, "vmax.s S000, S000, S001");
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cosf(scalar: f32) -> f32 {
