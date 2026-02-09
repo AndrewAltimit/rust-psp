@@ -137,6 +137,16 @@ jobs:
     outputs:
       status: ${{ steps.review.outputs.status }}
     steps:
+      - name: Pre-checkout cleanup
+        run: |
+          for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+                "rm -rf /workspace/$item" 2>/dev/null || \
+                sudo rm -rf "$item" 2>/dev/null || true
+            fi
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -224,6 +234,16 @@ jobs:
     outputs:
       status: ${{ steps.review.outputs.status }}
     steps:
+      - name: Pre-checkout cleanup
+        run: |
+          for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+                "rm -rf /workspace/$item" 2>/dev/null || \
+                sudo rm -rf "$item" 2>/dev/null || true
+            fi
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -301,6 +321,16 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
+      - name: Pre-checkout cleanup
+        run: |
+          for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+                "rm -rf /workspace/$item" 2>/dev/null || \
+                sudo rm -rf "$item" 2>/dev/null || true
+            fi
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -380,6 +410,16 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
+      - name: Pre-checkout cleanup
+        run: |
+          for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
+            if [ -d "$item" ] || [ -f "$item" ]; then
+              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+                "rm -rf /workspace/$item" 2>/dev/null || \
+                sudo rm -rf "$item" 2>/dev/null || true
+            fi
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
