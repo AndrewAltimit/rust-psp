@@ -520,6 +520,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-http-client-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-input-analog-example"
 version = "0.1.0"
 dependencies = [
@@ -535,6 +542,13 @@ dependencies = [
 
 [[package]]
 name = "psp-net-http-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-osk-input-example"
 version = "0.1.0"
 dependencies = [
  "psp",
@@ -564,6 +578,20 @@ dependencies = [
  "mousefood",
  "psp",
  "ratatui",
+]
+
+[[package]]
+name = "psp-rtc-sysinfo-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-savedata-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]

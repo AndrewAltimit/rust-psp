@@ -13,7 +13,7 @@ The upstream project is maintained at a low cadence (3-5 commits/year, mostly ni
 psp::module!("sample_module", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     psp::dprintln!("Hello PSP from rust!");
 }
 ```
@@ -157,7 +157,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 
 | Example | APIs Demonstrated | Description |
 |---------|-------------------|-------------|
-| `hello-world` | `dprintln!`, `enable_home_button` | Minimal PSP program |
+| `hello-world` | `dprintln!`, `psp::callback` | Minimal PSP program |
 | `cube` | `sceGu*`, `sceGum*`, VRAM alloc | Rotating 3D cube with lighting |
 | `rainbow` | `sceGu*`, vertex colors | Animated color gradient |
 | `gu-background` | `sceGu*`, VRAM alloc | Clear screen with solid color |
@@ -179,7 +179,11 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `audio-tone` | `psp::audio::AudioChannel` | Generate and play a sine wave |
 | `config-save` | `psp::config`, `psp::io` | Save and load key-value settings |
 | `input-analog` | `psp::input`, `psp::display` | Controller input with analog deadzone |
-| `net-http` | `psp::net`, `psp::wlan` | Connect to WiFi and fetch HTTP response |
+| `net-http` | `psp::net`, `psp::wlan` | Low-level raw TCP HTTP request |
+| `http-client` | `psp::http`, `psp::net` | High-level HTTP GET with HttpClient |
+| `savedata` | `psp::savedata`, `sceGu*` | Save and load game data via system dialog |
+| `osk-input` | `psp::osk`, `sceGu*` | On-screen keyboard text input |
+| `rtc-sysinfo` | `psp::rtc`, `psp::system_param` | RTC date/time and system settings |
 | `system-font` | `psp::font`, `psp::gu_ext` | Render text using PSP system fonts |
 | `thread-sync` | `psp::thread`, `psp::sync` | Spawn threads sharing a SpinMutex counter |
 | `timer-alarm` | `psp::timer` | One-shot alarm and virtual timer |
@@ -200,7 +204,7 @@ psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["kernel"]
 psp::module_kernel!("MyKernelApp", 1, 0);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     unsafe {
         let me_freq = psp::sys::scePowerGetMeClockFrequency();
         psp::dprintln!("ME clock: {}MHz", me_freq);
@@ -243,7 +247,7 @@ This fork adds experimental `std` support for PSP, allowing use of `String`, `Ve
 psp::module!("rust_std_hello_world", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let greeting = String::from("Hello from std!");
     psp::dprintln!("{}", greeting);
@@ -319,7 +323,7 @@ In your `main.rs` file, set up a basic skeleton:
 psp::module!("sample_module", 1, 0);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     psp::dprintln!("Hello PSP from rust!");
 }
 ```

@@ -9,7 +9,7 @@ use psp::timer::{Alarm, VTimer};
 psp::module!("timer_alarm_example", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     // One-shot alarm: fires after 2 seconds.
     psp::dprintln!("Setting alarm for 2 seconds...");

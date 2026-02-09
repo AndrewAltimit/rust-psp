@@ -8,7 +8,7 @@ use psp::config::{Config, ConfigValue};
 psp::module!("config_save_example", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     // Create a config and populate it.
     let mut cfg = Config::new();

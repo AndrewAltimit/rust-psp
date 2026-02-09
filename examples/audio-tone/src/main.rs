@@ -14,7 +14,7 @@ const SAMPLE_COUNT: i32 = 1024;
 const PLAY_SECONDS: u32 = 3;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let channel = match AudioChannel::reserve(SAMPLE_COUNT, AudioFormat::Stereo) {
         Ok(ch) => ch,

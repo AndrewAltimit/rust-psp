@@ -14,7 +14,7 @@ use psp::embedded_graphics::Framebuffer;
 psp::module!("sample_emb_gfx", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     let mut disp = Framebuffer::new();
 
     let style = PrimitiveStyleBuilder::new()

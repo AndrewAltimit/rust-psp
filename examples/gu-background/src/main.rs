@@ -13,7 +13,7 @@ psp::module!("sample_gu_background", 1, 1);
 static mut LIST: psp::Align16<[u32; 0x40000]> = psp::Align16([0; 0x40000]);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let allocator = get_vram_allocator().unwrap();
     let fbp0 = allocator

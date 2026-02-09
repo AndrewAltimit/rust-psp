@@ -4,7 +4,7 @@
 psp::module!("file_io_example", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let path = "host0:/test_output.txt";
     let message = b"Hello from rust-psp file I/O!";

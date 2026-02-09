@@ -4,7 +4,7 @@
 psp::module!("rust_std_hello_world", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let yeet = String::from("Yeeteth! I am inside a String!");
     psp::dprintln!("{}", yeet);

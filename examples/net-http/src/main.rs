@@ -11,7 +11,7 @@ use psp::net::{self, TcpStream};
 psp::module!("net_http_example", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     // Initialize networking subsystem (256 KiB pool).
     if let Err(e) = net::init(256 * 1024) {

@@ -8,7 +8,7 @@
 psp::module!("sample_wlan", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let status = psp::wlan::status();
 

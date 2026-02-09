@@ -4,7 +4,7 @@
 psp::module!("sample_clock_speed", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let clock = psp::power::get_clock();
     psp::dprintln!("PSP is operating at {}/{}MHz", clock.cpu_mhz, clock.bus_mhz);

@@ -15,7 +15,7 @@ use psp::{SCREEN_HEIGHT, SCREEN_WIDTH};
 psp::module!("Paint Mode Example", 0, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let disp = &mut Framebuffer::new();
     let mut cur_size = 1;

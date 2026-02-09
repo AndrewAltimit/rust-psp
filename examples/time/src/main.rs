@@ -4,7 +4,7 @@
 psp::module!("sample_time", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     match psp::time::DateTime::now() {
         Ok(now) => {

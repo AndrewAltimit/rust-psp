@@ -11,7 +11,7 @@ psp::module!("input_analog_example", 1, 1);
 const DEADZONE: f32 = 0.2;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     input::enable_analog();
 
     let mut ctrl = Controller::new();

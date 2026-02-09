@@ -47,7 +47,7 @@ unsafe fn setup_gu() {
 }
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     unsafe {
         setup_gu();

@@ -14,7 +14,7 @@ const THREAD_COUNT: usize = 4;
 const INCREMENTS: u32 = 100;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     psp::dprintln!(
         "Spawning {} threads, each incrementing {} times",

@@ -49,7 +49,7 @@ fn vfpu_add(a: i32, b: i32) -> i32 {
 }
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     psp::dprintln!("Testing VFPU...");
     psp::dprintln!("VFPU 123 + 4 = {}", vfpu_add(123, 4));
 }
