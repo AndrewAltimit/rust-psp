@@ -17,6 +17,14 @@ const MAX_ALIGN: usize = 128;
 /// An allocator that hooks directly into the PSP OS memory allocator.
 struct SystemAlloc;
 
+// Memory block layout:
+//
+//   [SceUid: 4 bytes][padding: 1..=align bytes][user data...]
+//                     ^--- last byte of padding stores padding length
+//
+// The padding always includes at least 1 byte (the length byte itself).
+// `align_offset(layout.align())` is computed from `ptr + 1` (past the
+// length byte position) to find how many more bytes are needed.
 unsafe impl GlobalAlloc for SystemAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.align() > MAX_ALIGN {
@@ -53,7 +61,12 @@ unsafe impl GlobalAlloc for SystemAlloc {
         ptr = ptr.add(mem::size_of::<SceUid>());
 
         // We must add at least one, to store this value.
-        let align_padding = 1 + ptr.add(1).align_offset(layout.align());
+        let offset = ptr.add(1).align_offset(layout.align());
+        if offset == usize::MAX {
+            sys::sceKernelFreePartitionMemory(id);
+            return ptr::null_mut();
+        }
+        let align_padding = 1 + offset;
         *ptr.add(align_padding - 1) = align_padding as u8;
         ptr.add(align_padding)
     }

@@ -155,21 +155,23 @@ macro_rules! _start {
 macro_rules! _start {
     ($psp_main:expr, $argc:expr, $argv:expr) => {{
         unsafe fn init_cwd(arg0: *mut u8) {
-            let mut len = 0;
-            while unsafe { *arg0.add(len) } != 0 {
-                len += 1;
-            }
+            unsafe {
+                let mut len = 0;
+                while *arg0.add(len) != 0 {
+                    len += 1;
+                }
 
-            // Truncate until last '/'.
-            while len > 0 && unsafe { *arg0.add(len - 1) } != b'/' {
-                len -= 1;
-            }
+                // Truncate until last '/'.
+                while len > 0 && *arg0.add(len - 1) != b'/' {
+                    len -= 1;
+                }
 
-            if len > 0 {
-                let tmp = unsafe { *arg0.add(len) };
-                unsafe { *arg0.add(len) = 0 };
-                unsafe { $crate::sys::sceIoChdir(arg0 as *const u8) };
-                unsafe { *arg0.add(len) = tmp };
+                if len > 0 {
+                    let tmp = *arg0.add(len);
+                    *arg0.add(len) = 0;
+                    $crate::sys::sceIoChdir(arg0 as *const u8);
+                    *arg0.add(len) = tmp;
+                }
             }
         }
 

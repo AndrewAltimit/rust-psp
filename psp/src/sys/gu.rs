@@ -468,11 +468,11 @@ pub enum StencilOperation {
     Zero = 1,
     /// Sets the stencil buffer value to ref, as specified by `sceGuStencilFunc`
     Replace = 2,
-    /// Increments the current stencil buffer value
-    Invert = 3,
-    /// Decrease the current stencil buffer value
-    Incr = 4,
     /// Bitwise invert the current stencil buffer value
+    Invert = 3,
+    /// Increment the current stencil buffer value
+    Incr = 4,
+    /// Decrement the current stencil buffer value
     Decr = 5,
 }
 
@@ -613,12 +613,14 @@ struct Settings {
     swap_buffers_behaviour: crate::sys::DisplaySetBufSync,
 }
 
+#[derive(Copy, Clone)]
 struct GuDisplayList {
     start: *mut u32,
     current: *mut u32,
     parent_context: GuContextType,
 }
 
+#[derive(Copy, Clone)]
 struct GuContext {
     list: GuDisplayList,
     scissor_enable: i32,
@@ -684,74 +686,30 @@ struct GuLightSettings {
 }
 
 static mut CURRENT_FRAME: u32 = 0;
-static mut CONTEXTS: [GuContext; 3] = [
-    GuContext {
-        list: GuDisplayList {
-            start: null_mut(),
-            current: null_mut(),
-            parent_context: GuContextType::Direct,
-        },
-        scissor_enable: 0,
-        scissor_start: [0, 0],
-        scissor_end: [0, 0],
-        near_plane: 0,
-        far_plane: 0,
-        depth_offset: 0,
-        fragment_2x: 0,
-        texture_function: 0,
-        texture_proj_map_mode: TextureProjectionMapMode::Position,
-        texture_map_mode: TextureMapMode::TextureCoords,
-        sprite_mode: [0, 0, 0, 0],
-        clear_color: 0,
-        clear_stencil: 0,
-        clear_depth: 0,
-        texture_mode: TexturePixelFormat::Psm5650,
+const DEFAULT_GU_CONTEXT: GuContext = GuContext {
+    list: GuDisplayList {
+        start: null_mut(),
+        current: null_mut(),
+        parent_context: GuContextType::Direct,
     },
-    GuContext {
-        list: GuDisplayList {
-            start: null_mut(),
-            current: null_mut(),
-            parent_context: GuContextType::Direct,
-        },
-        scissor_enable: 0,
-        scissor_start: [0, 0],
-        scissor_end: [0, 0],
-        near_plane: 0,
-        far_plane: 0,
-        depth_offset: 0,
-        fragment_2x: 0,
-        texture_function: 0,
-        texture_proj_map_mode: TextureProjectionMapMode::Position,
-        texture_map_mode: TextureMapMode::TextureCoords,
-        sprite_mode: [0, 0, 0, 0],
-        clear_color: 0,
-        clear_stencil: 0,
-        clear_depth: 0,
-        texture_mode: TexturePixelFormat::Psm5650,
-    },
-    GuContext {
-        list: GuDisplayList {
-            start: null_mut(),
-            current: null_mut(),
-            parent_context: GuContextType::Direct,
-        },
-        scissor_enable: 0,
-        scissor_start: [0, 0],
-        scissor_end: [0, 0],
-        near_plane: 0,
-        far_plane: 0,
-        depth_offset: 0,
-        fragment_2x: 0,
-        texture_function: 0,
-        texture_proj_map_mode: TextureProjectionMapMode::Position,
-        texture_map_mode: TextureMapMode::TextureCoords,
-        sprite_mode: [0, 0, 0, 0],
-        clear_color: 0,
-        clear_stencil: 0,
-        clear_depth: 0,
-        texture_mode: TexturePixelFormat::Psm5650,
-    },
-];
+    scissor_enable: 0,
+    scissor_start: [0, 0],
+    scissor_end: [0, 0],
+    near_plane: 0,
+    far_plane: 0,
+    depth_offset: 0,
+    fragment_2x: 0,
+    texture_function: 0,
+    texture_proj_map_mode: TextureProjectionMapMode::Position,
+    texture_map_mode: TextureMapMode::TextureCoords,
+    sprite_mode: [0, 0, 0, 0],
+    clear_color: 0,
+    clear_stencil: 0,
+    clear_depth: 0,
+    texture_mode: TexturePixelFormat::Psm5650,
+};
+
+static mut CONTEXTS: [GuContext; 3] = [DEFAULT_GU_CONTEXT; 3];
 
 static mut GE_LIST_EXECUTED: [i32; 2] = [0, 0];
 static mut GE_EDRAM_ADDRESS: *mut c_void = null_mut();
@@ -941,14 +899,8 @@ extern "C" fn callback_sig(id: i32, arg: *mut c_void) {
         (*settings).signal_history[idx] = (id & 0xffff) as i16;
         (*settings).signal_offset += 1;
 
-        if (*settings).sig.is_some() {
-            // Convert Option<fn(i32, *mut c_void)> -> fn(i32)
-            // This is fine because we are transmuting a nullable function
-            // pointer to another function pointer. The requirement here is that
-            // it must not be null.
-            let f = mem::transmute::<_, extern "C" fn(i32)>((*settings).sig);
-
-            f(id & 0xffff);
+        if let Some(f) = (*settings).sig {
+            f(id & 0xffff, core::ptr::null_mut());
         }
 
         crate::sys::sceKernelSetEventFlag((*settings).kernel_event_flag, 1);
@@ -959,14 +911,8 @@ extern "C" fn callback_fin(id: i32, arg: *mut c_void) {
     unsafe {
         let settings = arg as *mut Settings;
 
-        if let Some(fin) = (*settings).fin {
-            // Convert Option<fn(i32, *mut c_void)> -> fn(i32)
-            // This is fine because we are transmuting a nullable function
-            // pointer to another function pointer. The requirement here is that
-            // it must not be null.
-            let f = core::mem::transmute::<_, extern "C" fn(i32)>(fin);
-
-            f(id & 0xffff)
+        if let Some(f) = (*settings).fin {
+            f(id & 0xffff, core::ptr::null_mut());
         }
     }
 }
@@ -1127,8 +1073,9 @@ pub unsafe extern "C" fn sceGuDisplay(state: bool) -> bool {
         );
     }
 
+    let previous = DISPLAY_ON;
     DISPLAY_ON = state;
-    state
+    previous
 }
 
 /// Select which depth-test function to use
@@ -1852,7 +1799,7 @@ pub unsafe extern "C" fn sceGuCallMode(mode: i32) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGuCheckList() -> i32 {
-    (*LIST).current.sub((*LIST).start as usize) as i32
+    (*LIST).current.offset_from((*LIST).start) as i32
 }
 
 /// Send a list to the GE directly
@@ -2099,11 +2046,13 @@ pub unsafe extern "C" fn sceGuGetStatus(state: GuState) -> bool {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGuSetAllStatus(status: i32) {
-    for i in 0..22 {
-        if (status >> i) & 1 != 0 {
-            sceGuEnable(mem::transmute(i));
-        } else {
-            sceGuDisable(mem::transmute(i));
+    for i in 0..22u32 {
+        if let Ok(state) = GuState::try_from(i) {
+            if (status >> i) & 1 != 0 {
+                sceGuEnable(state);
+            } else {
+                sceGuDisable(state);
+            }
         }
     }
 }
@@ -3452,7 +3401,7 @@ pub unsafe extern "C" fn sceGuMorphWeight(index: i32, weight: f32) {
         5 => GeCommand::MorphWeight5,
         6 => GeCommand::MorphWeight6,
         7 => GeCommand::MorphWeight7,
-        _ => core::intrinsics::unreachable(),
+        _ => unreachable!(),
     };
 
     send_command_f(cmd, weight);

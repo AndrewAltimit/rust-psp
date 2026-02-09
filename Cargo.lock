@@ -135,39 +135,16 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embedded-graphics"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "750082c65094fbcc4baf9ba31583ce9a8bb7f52cadfb96f6164b1bc7f922f32b"
-dependencies = [
- "az",
- "byteorder",
- "embedded-graphics-core 0.3.3",
- "float-cmp 0.8.0",
- "micromath 1.1.1",
-]
-
-[[package]]
-name = "embedded-graphics"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0649998afacf6d575d126d83e68b78c0ab0e00ca2ac7e9b3db11b4cbe8274ef0"
 dependencies = [
  "az",
  "byteorder",
- "embedded-graphics-core 0.4.0",
+ "embedded-graphics-core",
  "fixed",
- "float-cmp 0.9.0",
- "micromath 2.1.0",
-]
-
-[[package]]
-name = "embedded-graphics-core"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8b1239db5f3eeb7e33e35bd10bd014e7b2537b17e071f726a09351431337cfa"
-dependencies = [
- "az",
- "byteorder",
+ "float-cmp",
+ "micromath",
 ]
 
 [[package]]
@@ -186,7 +163,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ef96f7e6453093b9ffc738fb025f1a14c31f7f67a5d587db99beb23ab8b433a"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
 ]
 
 [[package]]
@@ -205,15 +182,6 @@ dependencies = [
  "bytemuck",
  "half",
  "typenum",
-]
-
-[[package]]
-name = "float-cmp"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1267f4ac4f343772758f7b1bdcbe767c218bbab93bb432acbf5162bbf85a6c4"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
@@ -388,18 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "memchr"
-version = "2.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
-
-[[package]]
-name = "micromath"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc4010833aea396656c2f91ee704d51a6f1329ec2ab56ffd00bfd56f7481ea94"
-
-[[package]]
 name = "micromath"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,20 +366,10 @@ name = "mousefood"
 version = "0.2.1"
 source = "git+https://github.com/j-g00da/mousefood?rev=1028ac24f83920fd95a5585a85ef943901ee63ac#1028ac24f83920fd95a5585a85ef943901ee63ac"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
  "embedded-graphics-unicodefonts",
  "ratatui-core",
  "thiserror",
-]
-
-[[package]]
-name = "nom"
-version = "6.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6a7a9657c84d5814c6196b68bb4429df09c18b1573806259fba397ea4ad0d44"
-dependencies = [
- "memchr",
- "version_check",
 ]
 
 [[package]]
@@ -500,12 +446,19 @@ name = "psp"
 version = "0.4.0"
 dependencies = [
  "bitflags",
- "embedded-graphics-core 0.4.0",
+ "embedded-graphics-core",
  "libm",
  "num_enum",
  "num_enum_derive",
  "paste",
  "unstringify",
+]
+
+[[package]]
+name = "psp-audio-tone-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]
@@ -526,9 +479,16 @@ dependencies = [
 name = "psp-embedded-graphics-example"
 version = "0.1.0"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
  "psp",
  "tinybmp",
+]
+
+[[package]]
+name = "psp-file-io-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]
@@ -563,7 +523,7 @@ dependencies = [
 name = "psp-paint-mode"
 version = "0.1.0"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
  "numtoa",
  "psp",
 ]
@@ -579,10 +539,17 @@ dependencies = [
 name = "psp-ratatui-example"
 version = "0.1.0"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
  "mousefood",
  "psp",
  "ratatui",
+]
+
+[[package]]
+name = "psp-screenshot-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]
@@ -746,7 +713,7 @@ dependencies = [
 name = "test_cases"
 version = "0.1.0"
 dependencies = [
- "embedded-graphics 0.8.1",
+ "embedded-graphics",
  "psp",
 ]
 
@@ -790,12 +757,11 @@ checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "tinybmp"
-version = "0.3.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44873aee48dd30712dc2610209902a78b9033a0148ac03c6c3e73e4ca2f49838"
+checksum = "acb540c3e6f049f914d9c3eaf86ca415e264cf42d2b25bb5c24241af1a1e3aea"
 dependencies = [
- "embedded-graphics 0.7.1",
- "nom",
+ "embedded-graphics",
 ]
 
 [[package]]

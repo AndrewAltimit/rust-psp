@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Context as _, Result, bail, ensure};
 use clap::Parser;
 use std::io::SeekFrom;
 use std::io::prelude::*;
@@ -126,16 +126,25 @@ fn main() -> Result<()> {
         strings.insert("TITLE".to_string(), args.title);
 
         // Default Values
-        strings.insert("CATEGORY".to_string(), "MG".to_string());
-        strings.insert("DISC_ID".to_string(), "UCJS10041".to_string());
-        strings.insert("DISC_VERSION".to_string(), "1.00".to_string());
-        strings.insert("PSP_SYSTEM_VER".to_string(), "1.00".to_string());
+        strings
+            .entry("CATEGORY".to_string())
+            .or_insert_with(|| "MG".to_string());
+        strings
+            .entry("DISC_ID".to_string())
+            .or_insert_with(|| "UCJS10041".to_string());
+        strings
+            .entry("DISC_VERSION".to_string())
+            .or_insert_with(|| "1.00".to_string());
+        strings
+            .entry("PSP_SYSTEM_VER".to_string())
+            .or_insert_with(|| "1.00".to_string());
 
-        dwords.insert("BOOTABLE".to_string(), 1);
-        dwords.insert("PARENTAL_LEVEL".to_string(), 1);
-        dwords.insert("REGION".to_string(), 0x8000);
+        dwords.entry("BOOTABLE".to_string()).or_insert(1);
+        dwords.entry("PARENTAL_LEVEL".to_string()).or_insert(1);
+        dwords.entry("REGION".to_string()).or_insert(0x8000);
     }
 
+    // Validation table: (EntryType, valid_for_WG, valid_for_MS, valid_for_MG, valid_for_UG)
     let valid: HashMap<&'static str, (EntryType, bool, bool, bool, bool)> = [
         ("BOOTABLE", (EntryType::Dword, false, false, true, true)),
         ("CATEGORY", (EntryType::String, false, true, true, true)),
@@ -256,18 +265,11 @@ fn main() -> Result<()> {
 
     let mut sfo_entries: Vec<SfoEntry> = Vec::new();
 
-    let mut sorted_keys: Vec<String> = Vec::new();
-    for (key, _value) in dwords.iter() {
-        sorted_keys.push(key.to_string());
-    }
-    for (key, _value) in strings.iter() {
-        sorted_keys.push(key.to_string());
-    }
+    let mut sorted_keys: Vec<String> = dwords.keys().chain(strings.keys()).cloned().collect();
     sorted_keys.sort();
 
     for key in sorted_keys {
-        if dwords.contains_key(&key) {
-            let value = dwords.get(&key).unwrap();
+        if let Some(value) = dwords.get(&key) {
             header.count += 1;
             let mut sfo_entry = SfoEntry {
                 key_offset,
@@ -277,16 +279,27 @@ fn main() -> Result<()> {
                 ..Default::default()
             };
             let idx = key_offset as usize;
+            ensure!(
+                idx + key.len() <= keys.len(),
+                "key buffer overflow: key '{}' at offset {}",
+                key,
+                idx
+            );
             keys[idx..idx + key.len()].copy_from_slice(key.as_bytes());
             key_offset += key.len() as u16 + 1;
             sfo_entry.val_size = 4;
             sfo_entry.total_size = 4;
             let idx = data_offset as usize;
+            ensure!(
+                idx + 4 <= data.len(),
+                "data buffer overflow: dword '{}' at offset {}",
+                key,
+                idx
+            );
             data[idx..idx + 4].copy_from_slice(&value.to_le_bytes());
             data_offset += 4;
             sfo_entries.push(sfo_entry);
-        } else if strings.contains_key(&key) {
-            let value = strings.get(&key).unwrap();
+        } else if let Some(value) = strings.get(&key) {
             header.count += 1;
             let mut sfo_entry = SfoEntry {
                 key_offset,
@@ -296,6 +309,12 @@ fn main() -> Result<()> {
                 ..Default::default()
             };
             let idx = key_offset as usize;
+            ensure!(
+                idx + key.len() <= keys.len(),
+                "key buffer overflow: key '{}' at offset {}",
+                key,
+                idx
+            );
             keys[idx..idx + key.len()].copy_from_slice(key.as_bytes());
             key_offset += key.len() as u16 + 1;
 
@@ -304,6 +323,12 @@ fn main() -> Result<()> {
             sfo_entry.val_size = val_size as u32;
             sfo_entry.total_size = total_size as u32;
             let idx = data_offset as usize;
+            ensure!(
+                idx + value.len() <= data.len(),
+                "data buffer overflow: string '{}' at offset {}",
+                key,
+                idx
+            );
             data[idx..idx + value.len()].copy_from_slice(value.as_bytes());
             data_offset += total_size as u32;
             sfo_entries.push(sfo_entry);

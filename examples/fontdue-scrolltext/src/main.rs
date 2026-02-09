@@ -13,8 +13,8 @@ use psp::math::sinf;
 use psp::sys::TexturePixelFormat;
 use psp::vram_alloc::get_vram_allocator;
 
-use graphics::sprite::{Sprite, Vertex};
 use graphics::Align4;
+use graphics::sprite::{Sprite, Vertex};
 
 use fontdue;
 
@@ -34,18 +34,20 @@ fn psp_main() {
     // Set up buffers
     let mut allocator = get_vram_allocator().unwrap();
     graphics::setup(&mut allocator);
-    let texture_buffer = allocator.alloc_texture_pixels(
-        (LEN * BUF_WIDTH) as u32,
-        BUF_HEIGHT as u32,
-        TexturePixelFormat::Psm8888,
-    );
+    let texture_buffer = allocator
+        .alloc_texture_pixels(
+            (LEN * BUF_WIDTH) as u32,
+            BUF_HEIGHT as u32,
+            TexturePixelFormat::Psm8888,
+        )
+        .unwrap();
     let texture_buffer = unsafe {
         slice::from_raw_parts_mut(
             texture_buffer.as_mut_ptr_direct_to_vram() as *mut u32,
             LEN as usize * BUF_WIDTH * BUF_HEIGHT,
         )
     };
-    let vertex_buffer = allocator.alloc_sized::<Vertex>(LEN as u32 * 2);
+    let vertex_buffer = allocator.alloc_sized::<Vertex>(LEN as u32 * 2).unwrap();
     let vertex_buffer = unsafe {
         slice::from_raw_parts_mut(
             vertex_buffer.as_mut_ptr_direct_to_vram() as *mut Align4<Vertex>,

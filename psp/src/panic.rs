@@ -52,7 +52,7 @@ fn panic_impl(info: &PanicInfo) -> ! {
     impl<'a> PanicPayload<'a> {
         fn new(info: &'a PanicInfo<'a>) -> PanicPayload<'a> {
             let message = info.message();
-            let location = info.location().unwrap();
+            let location = info.location().unwrap_or_else(|| Location::caller());
             PanicPayload {
                 message,
                 location,

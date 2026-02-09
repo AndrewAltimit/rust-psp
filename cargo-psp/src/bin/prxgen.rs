@@ -2,7 +2,7 @@ use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use goblin::elf32::{
     header::Header,
-    program_header::{PT_LOAD, ProgramHeader},
+    program_header::{PF_R, PF_X, PT_LOAD, ProgramHeader},
     reloc::{R_MIPS_GPREL16, R_MIPS_PC16, Rel, SIZEOF_REL},
     section_header::{SHF_ALLOC, SHT_LOPROC, SHT_REL, SHT_SYMTAB, SectionHeader},
     sym::{SIZEOF_SYM, Sym},
@@ -18,6 +18,7 @@ const ELF_MACHINE_MIPS: u16 = 0x0008;
 
 const PRX_EXEC_TYPE: u16 = 0xFFA0;
 const PRX_SHT_REL: u32 = SHT_LOPROC | 0xA0;
+const PRX_SEGMENT_ALIGN: u32 = 0x10;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -231,15 +232,15 @@ impl<'a> PrxBuilder<'a> {
             let mem_size = load_segments()
                 .map(|ph| ph.p_offset + ph.p_memsz - start_offset)
                 .max()
-                .unwrap();
+                .context("no LOAD segments found for memsz")?;
 
             let file_size = load_segments()
                 .map(|ph| ph.p_offset + ph.p_filesz - start_offset)
                 .max()
-                .unwrap();
+                .context("no LOAD segments found for filesz")?;
 
             let program_header = &mut self.program_headers[0];
-            program_header.p_type = 1;
+            program_header.p_type = PT_LOAD;
             program_header.p_vaddr = 0;
             program_header.p_paddr = {
                 // Check if we are a kernel module.
@@ -251,8 +252,8 @@ impl<'a> PrxBuilder<'a> {
             };
             program_header.p_filesz = file_size;
             program_header.p_memsz = mem_size;
-            program_header.p_flags = 5;
-            program_header.p_align = 0x10;
+            program_header.p_flags = PF_R | PF_X;
+            program_header.p_align = PRX_SEGMENT_ALIGN;
         }
 
         Ok(self)

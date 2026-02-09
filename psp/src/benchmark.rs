@@ -1,5 +1,9 @@
 /// Execute `f` `iterations` times and return average duration per iteration
 pub fn benchmark<F: FnMut()>(mut f: F, iterations: usize) -> core::time::Duration {
+    if iterations == 0 {
+        return core::time::Duration::ZERO;
+    }
+
     let mut loop_start: u64 = 0;
     let mut loop_end: u64 = 0;
     let avg_micros: u64;

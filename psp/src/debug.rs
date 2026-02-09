@@ -7,7 +7,7 @@
 use crate::sys;
 use core::cell::UnsafeCell;
 use core::fmt;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 /// Like `println!`, but prints to the PSP screen.
 #[macro_export]
@@ -123,8 +123,10 @@ impl Font for MsxFont {
     const CHAR_WIDTH: usize = 6;
 
     fn put_char(x: usize, y: usize, color: u32, c: u8) {
+        debug_assert!((c as usize) < 256, "font index out of bounds");
+
         unsafe {
-            let mut ptr = VRAM_BASE.add(x + y * BUFFER_WIDTH);
+            let mut ptr = VRAM_BASE.load(Ordering::Relaxed).add(x + y * BUFFER_WIDTH);
 
             for i in 0..8 {
                 for j in 0..8 {
@@ -146,19 +148,19 @@ use crate::constants::{SCREEN_HEIGHT, SCREEN_WIDTH, VRAM_BASE_UNCACHED, VRAM_BUF
 const BUFFER_WIDTH: usize = VRAM_BUFFER_WIDTH as usize;
 const DISPLAY_HEIGHT: usize = SCREEN_HEIGHT as usize;
 const DISPLAY_WIDTH: usize = SCREEN_WIDTH as usize;
-static mut VRAM_BASE: *mut u32 = 0 as *mut u32;
+static VRAM_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
 
-#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn clear_screen(color: u32) {
-    let mut ptr = VRAM_BASE;
+    let mut ptr = VRAM_BASE.load(Ordering::Relaxed);
 
     for _ in 0..(BUFFER_WIDTH * DISPLAY_HEIGHT) {
-        *ptr = color;
-        ptr = ptr.offset(1);
+        unsafe {
+            *ptr = color;
+            ptr = ptr.offset(1);
+        }
     }
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn put_str<T: Font>(s: &[u8], x: usize, y: usize, color: u32) {
     if y > DISPLAY_HEIGHT {
         return;
@@ -169,24 +171,26 @@ unsafe fn put_str<T: Font>(s: &[u8], x: usize, y: usize, color: u32) {
             break;
         }
 
-        if *c as u32 <= 255 && *c != b'\0' {
+        if *c != b'\0' {
             T::put_char(T::CHAR_WIDTH * i + x, y, color, *c);
         }
     }
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn init() {
     // The OR operation here specifies the address bypasses cache.
-    VRAM_BASE = (VRAM_BASE_UNCACHED | sys::sceGeEdramGetAddr() as u32) as *mut u32;
+    let base = (VRAM_BASE_UNCACHED | unsafe { sys::sceGeEdramGetAddr() } as u32) as *mut u32;
+    VRAM_BASE.store(base, Ordering::Relaxed);
 
-    sys::sceDisplaySetMode(sys::DisplayMode::Lcd, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-    sys::sceDisplaySetFrameBuf(
-        VRAM_BASE as *const u8,
-        BUFFER_WIDTH,
-        sys::DisplayPixelFormat::Psm8888,
-        sys::DisplaySetBufSync::NextFrame,
-    );
+    unsafe {
+        sys::sceDisplaySetMode(sys::DisplayMode::Lcd, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+        sys::sceDisplaySetFrameBuf(
+            base as *const u8,
+            BUFFER_WIDTH,
+            sys::DisplayPixelFormat::Psm8888,
+            sys::DisplaySetBufSync::NextFrame,
+        );
+    }
 }
 
 #[doc(hidden)]
@@ -251,10 +255,9 @@ impl CharBuffer {
         match c {
             b'\n' => self.advance_next = true,
             b'\t' => {
-                self.add(b' ');
-                self.add(b' ');
-                self.add(b' ');
-                self.add(b' ');
+                for _ in 0..4 {
+                    self.add(b' ');
+                }
             },
 
             _ => {
@@ -297,7 +300,7 @@ impl<'a> Iterator for LineIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.pos < core::cmp::min(self.buf.written + 1, ROWS) {
-            let idx = if self.buf.written > ROWS {
+            let idx = if self.buf.written >= ROWS {
                 (self.buf.written + 1 + self.pos) % ROWS
             } else {
                 self.pos

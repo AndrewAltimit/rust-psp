@@ -205,6 +205,38 @@ fn generate_std_target_json() -> Result<std::path::PathBuf> {
 }
 
 /// Prepare a merged sysroot that overlays PSP PAL files on top of the
+/// Check if any workspace member depends on `psp` with the `std` feature enabled.
+/// Returns `true` if so, enabling automatic std sysroot preparation.
+fn detect_psp_std_feature() -> bool {
+    let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .arg("metadata")
+        .arg("--format-version=1")
+        .arg("--no-deps")
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .output()
+        .ok();
+    let output = match output {
+        Some(o) if o.status.success() => o,
+        _ => return false,
+    };
+    let json = match std::str::from_utf8(&output.stdout) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let metadata = match MetadataCommand::parse(json) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let workspace_members: HashSet<_> = metadata.workspace_members.iter().collect();
+    metadata
+        .packages
+        .iter()
+        .filter(|p| workspace_members.contains(&p.id))
+        .flat_map(|p| &p.dependencies)
+        .any(|dep| dep.name == "psp" && dep.features.iter().any(|f| f == "std"))
+}
+
 /// standard rust-src component. The merged directory is placed at
 /// `target/psp-std-sysroot/` and reused across builds.
 fn prepare_psp_sysroot() -> Result<()> {
@@ -469,9 +501,9 @@ fn main() -> Result<()> {
     // Skip `cargo psp`
     let args = env::args().skip(2);
 
-    let build_std = env::var("RUST_PSP_BUILD_STD").is_ok();
+    let build_std = env::var("RUST_PSP_BUILD_STD").is_ok() || detect_psp_std_feature();
     let build_std_flag = if build_std {
-        eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, building std for PSP.");
+        eprintln!("[NOTE]: Building with full std support for PSP.");
         "build-std=std,core,alloc,panic_unwind,panic_abort"
     } else {
         "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort"

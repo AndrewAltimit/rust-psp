@@ -1,5 +1,9 @@
 # Kernel Mode Implementation Plan
 
+> **Status: COMPLETED** -- All 6 phases were implemented in commit `6f01ff8`. This document is retained as historical record of the design process.
+
+---
+
 This plan covers all work needed to bring the rust-psp SDK to full kernel mode support. The primary consumer is [OASIS_OS](https://github.com/AndrewAltimit/template-repo/tree/main/packages/oasis_os), but all changes are general-purpose SDK extensions useful to any PSP homebrew project.
 
 **Branch:** `initial_release`

@@ -15,6 +15,12 @@ type VramAllocator = SimpleVramAllocator;
 #[derive(Debug)]
 pub struct VramAllocatorInUseError {}
 
+impl core::fmt::Display for VramAllocatorInUseError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("VRAM allocator is already in use")
+    }
+}
+
 /// Errors returned by VRAM allocation operations.
 #[derive(Debug)]
 pub enum VramAllocError {
@@ -24,6 +30,23 @@ pub enum VramAllocError {
     UnsupportedPixelFormat,
     /// Integer overflow computing allocation size.
     Overflow,
+}
+
+impl core::fmt::Display for VramAllocError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::OutOfMemory {
+                requested,
+                available,
+            } => write!(
+                f,
+                "out of VRAM: requested {} bytes, {} available",
+                requested, available
+            ),
+            Self::UnsupportedPixelFormat => f.write_str("unsupported texture pixel format"),
+            Self::Overflow => f.write_str("integer overflow computing allocation size"),
+        }
+    }
 }
 
 /// Atomic guard ensuring only one VRAM allocator instance exists at a time.
@@ -179,16 +202,20 @@ fn get_memory_size(
     height: u32,
     psm: TexturePixelFormat,
 ) -> Result<u32, VramAllocError> {
+    let pixels = width.checked_mul(height).ok_or(VramAllocError::Overflow)?;
+
     match psm {
-        TexturePixelFormat::PsmT4 => Ok((width * height) >> 1),
-        TexturePixelFormat::PsmT8 => Ok(width * height),
+        TexturePixelFormat::PsmT4 => Ok(pixels >> 1),
+        TexturePixelFormat::PsmT8 => Ok(pixels),
 
         TexturePixelFormat::Psm5650
         | TexturePixelFormat::Psm5551
         | TexturePixelFormat::Psm4444
-        | TexturePixelFormat::PsmT16 => Ok(2 * width * height),
+        | TexturePixelFormat::PsmT16 => pixels.checked_mul(2).ok_or(VramAllocError::Overflow),
 
-        TexturePixelFormat::Psm8888 | TexturePixelFormat::PsmT32 => Ok(4 * width * height),
+        TexturePixelFormat::Psm8888 | TexturePixelFormat::PsmT32 => {
+            pixels.checked_mul(4).ok_or(VramAllocError::Overflow)
+        },
 
         _ => Err(VramAllocError::UnsupportedPixelFormat),
     }

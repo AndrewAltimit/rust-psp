@@ -199,40 +199,31 @@ impl<'a> TestRunner<'a> {
     }
 }
 
-fn get_test_output_pipe() -> SceUid {
-    // Build the path buffer here so it lives across the sceIoOpen call.
-    let path = format!("host0:/{}\0", OUTPUT_FIFO);
+fn open_psp_file(path_suffix: &str, flags: sys::IoOpenFlags, error_msg: &str) -> SceUid {
+    let path = format!("host0:/{}\0", path_suffix);
     unsafe {
-        let fd = sys::sceIoOpen(
-            path.as_bytes().as_ptr(),
-            sys::IoOpenFlags::APPEND | sys::IoOpenFlags::WR_ONLY,
-            0o777,
-        );
+        let fd = sys::sceIoOpen(path.as_bytes().as_ptr(), flags, 0o777);
         if fd.0 < 0 {
-            panic!(
-                "Unable to open pipe \"{}\" for output! \
-                You must create it yourself with `mkfifo`.",
-                fd.0
-            );
+            panic!("{}", error_msg);
         }
         fd
     }
 }
 
+fn get_test_output_pipe() -> SceUid {
+    open_psp_file(
+        OUTPUT_FIFO,
+        sys::IoOpenFlags::APPEND | sys::IoOpenFlags::WR_ONLY,
+        "Unable to open pipe for output! You must create it yourself with `mkfifo`.",
+    )
+}
+
 fn get_test_output_file() -> SceUid {
-    // Build the path buffer here so it lives across the sceIoOpen call.
-    let path = format!("host0:/{}\0", OUTPUT_FILENAME);
-    unsafe {
-        let fd = sys::sceIoOpen(
-            path.as_bytes().as_ptr(),
-            sys::IoOpenFlags::TRUNC | sys::IoOpenFlags::CREAT | sys::IoOpenFlags::RD_WR,
-            0o777,
-        );
-        if fd.0 < 0 {
-            panic!("Unable to open file \"{}\" for output!", OUTPUT_FILENAME);
-        }
-        fd
-    }
+    open_psp_file(
+        OUTPUT_FILENAME,
+        sys::IoOpenFlags::TRUNC | sys::IoOpenFlags::CREAT | sys::IoOpenFlags::RD_WR,
+        "Unable to open file for output!",
+    )
 }
 
 fn write_to_psp_output_fd(fd: SceUid, msg: &str) {

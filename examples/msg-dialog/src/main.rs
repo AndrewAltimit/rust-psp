@@ -19,7 +19,7 @@ const BUF_WIDTH: i32 = 512;
 
 unsafe fn setup_gu() {
     sys::sceGuInit();
-    sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
+    sys::sceGuStart(GuContextType::Direct, &raw mut LIST as *mut c_void);
     sys::sceGuDrawBuffer(
         DisplayPixelFormat::Psm8888,
         core::ptr::null_mut(),
@@ -94,7 +94,7 @@ fn psp_main() {
             _ => (),
         }
         unsafe {
-            sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
+            sys::sceGuStart(GuContextType::Direct, &raw mut LIST as *mut c_void);
             sys::sceGuFinish();
             sys::sceGuSync(GuSyncMode::Finish, sys::GuSyncBehavior::Wait);
             sys::sceDisplayWaitVblankStart();
