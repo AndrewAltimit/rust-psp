@@ -16,6 +16,22 @@
 //! addresses (OR'd with `0x4000_0000`). The ME cannot access cached main
 //! RAM coherently.
 //!
+//! # High-Level API
+//!
+//! The [`MeExecutor`] provides a safe, high-level task submission API that
+//! handles uncached memory allocation, shared synchronization state, and
+//! cache management internally.
+//!
+//! ```ignore
+//! use psp::me::MeExecutor;
+//!
+//! unsafe extern "C" fn my_task(arg: i32) -> i32 { arg * 2 }
+//!
+//! let mut executor = MeExecutor::new(4096).unwrap();
+//! let handle = unsafe { executor.submit(my_task, 21) };
+//! let result = executor.wait(&handle); // returns 42
+//! ```
+//!
 //! # Kernel Mode Required
 //!
 //! All functions in this module require `feature = "kernel"` and the module
@@ -145,4 +161,243 @@ pub unsafe fn me_alloc(size: u32, name: *const u8) -> Result<(*mut u8, crate::sy
     let uncached_ptr = to_uncached(ptr);
 
     Ok((uncached_ptr, block_id))
+}
+
+// ── MeExecutor ──────────────────────────────────────────────────────
+
+/// Status values for ME task slots, stored in uncached shared memory.
+#[cfg(feature = "kernel")]
+mod status {
+    /// Slot is available for a new task.
+    pub const IDLE: u32 = 0;
+    /// Task has been submitted and is running on the ME.
+    pub const RUNNING: u32 = 1;
+    /// Task has completed; result is available.
+    pub const DONE: u32 = 2;
+}
+
+/// Shared state between the main CPU and ME for a single task.
+///
+/// This struct lives in uncached memory. The ME writes `status` and
+/// `result` when the task completes; the main CPU reads them.
+#[cfg(feature = "kernel")]
+#[repr(C)]
+struct MeSharedState {
+    /// Task status (see [`status`] module).
+    status: u32,
+    /// Task return value (valid when `status == DONE`).
+    result: i32,
+    /// Boot parameters for the ME.
+    boot_params: MeBootParams,
+}
+
+/// An opaque handle to a submitted ME task.
+///
+/// Use with [`MeExecutor::poll`] or [`MeExecutor::wait`] to retrieve
+/// the result.
+#[cfg(feature = "kernel")]
+#[derive(Debug, Clone, Copy)]
+pub struct MeHandle {
+    /// Index into the shared state — currently always 0 since the ME
+    /// can only run one task at a time.
+    _slot: u32,
+}
+
+/// High-level Media Engine task executor.
+///
+/// Manages uncached memory allocation, ME boot parameters, and
+/// synchronization internally. Submit tasks with [`submit`](Self::submit),
+/// then poll or wait for results.
+///
+/// # Example
+///
+/// ```ignore
+/// use psp::me::MeExecutor;
+///
+/// unsafe extern "C" fn double(arg: i32) -> i32 { arg * 2 }
+///
+/// let mut executor = MeExecutor::new(4096).unwrap();
+/// let handle = unsafe { executor.submit(double, 21) };
+/// assert_eq!(executor.wait(&handle), 42);
+/// ```
+#[cfg(feature = "kernel")]
+pub struct MeExecutor {
+    /// Pointer to the shared state in uncached memory.
+    shared: *mut MeSharedState,
+    /// Block ID for the shared state allocation.
+    shared_block: crate::sys::SceUid,
+    /// Pointer to the ME stack in uncached memory.
+    stack_base: *mut u8,
+    /// Block ID for the stack allocation.
+    stack_block: crate::sys::SceUid,
+    /// Size of the ME stack.
+    stack_size: u32,
+}
+
+#[cfg(feature = "kernel")]
+impl MeExecutor {
+    /// Create a new `MeExecutor` with the given ME stack size.
+    ///
+    /// Allocates shared state and stack memory in ME-accessible partition 3.
+    /// `stack_size` should be at least 4096 bytes for most tasks.
+    ///
+    /// # Errors
+    ///
+    /// Returns the PSP error code if memory allocation fails.
+    pub fn new(stack_size: u32) -> Result<Self, i32> {
+        let shared_size = core::mem::size_of::<MeSharedState>() as u32;
+
+        // SAFETY: Kernel mode is required. We allocate from partition 3.
+        let (shared_ptr, shared_block) =
+            unsafe { me_alloc(shared_size, b"MeExecState\0".as_ptr()) }?;
+        let shared = shared_ptr as *mut MeSharedState;
+
+        let (stack_base, stack_block) =
+            match unsafe { me_alloc(stack_size, b"MeExecStack\0".as_ptr()) } {
+                Ok(v) => v,
+                Err(e) => {
+                    // Clean up the shared state allocation
+                    unsafe {
+                        crate::sys::sceKernelFreePartitionMemory(shared_block);
+                    }
+                    return Err(e);
+                },
+            };
+
+        // Initialize shared state to idle
+        // SAFETY: shared is a valid uncached pointer.
+        unsafe {
+            core::ptr::write_volatile(&raw mut (*shared).status, status::IDLE);
+            core::ptr::write_volatile(&raw mut (*shared).result, 0);
+        }
+
+        Ok(Self {
+            shared,
+            shared_block,
+            stack_base,
+            stack_block,
+            stack_size,
+        })
+    }
+
+    /// Submit a task to the Media Engine.
+    ///
+    /// The ME will execute `task(arg)` on its own core. Use the returned
+    /// [`MeHandle`] with [`poll`](Self::poll) or [`wait`](Self::wait) to
+    /// retrieve the result.
+    ///
+    /// # Safety
+    ///
+    /// - Only one task can run at a time. Calling `submit` while a
+    ///   previous task is still running is undefined behavior.
+    /// - `task` must be safe to execute on the ME core (no syscalls,
+    ///   no cached memory access, no floating-point context sharing).
+    /// - The caller must be in kernel mode.
+    #[cfg(all(target_os = "psp", feature = "kernel"))]
+    pub unsafe fn submit(&mut self, task: MeTask, arg: i32) -> MeHandle {
+        // Wrapper that writes the result and status to shared memory
+        // before returning. The ME cannot call any PSP syscalls, so
+        // the wrapper writes directly to the uncached shared state.
+        unsafe extern "C" fn me_wrapper(shared_addr: i32) -> i32 {
+            let shared = shared_addr as *mut MeSharedState;
+            let task: MeTask = core::ptr::read_volatile(&raw const (*shared).boot_params.task);
+            let arg = core::ptr::read_volatile(&raw const (*shared).boot_params.arg);
+
+            let result = task(arg);
+
+            // Write result and mark as done (uncached memory, visible immediately)
+            core::ptr::write_volatile(&raw mut (*shared).result, result);
+            core::ptr::write_volatile(&raw mut (*shared).status, status::DONE);
+
+            result
+        }
+
+        // Stack grows downward — point to the top
+        let stack_top = self.stack_base.add(self.stack_size as usize);
+
+        // Set up the boot parameters in uncached memory
+        unsafe {
+            core::ptr::write_volatile(&raw mut (*self.shared).status, status::RUNNING);
+            core::ptr::write_volatile(
+                &raw mut (*self.shared).boot_params,
+                MeBootParams {
+                    task,
+                    arg,
+                    stack_top,
+                },
+            );
+        }
+
+        // Create the actual boot params for the wrapper
+        let wrapper_params = MeBootParams {
+            task: me_wrapper,
+            arg: self.shared as i32,
+            stack_top,
+        };
+
+        // Write wrapper params temporarily to the boot_params field
+        // so the ME can read the real task from shared state
+        unsafe {
+            core::ptr::write_volatile(&raw mut (*self.shared).boot_params, wrapper_params);
+        }
+
+        // Boot the ME
+        // SAFETY: All params are in uncached memory, kernel mode is required
+        unsafe {
+            me_boot(&(*self.shared).boot_params);
+        }
+
+        MeHandle { _slot: 0 }
+    }
+
+    /// Poll for task completion without blocking.
+    ///
+    /// Returns `Some(result)` if the task has completed, `None` if it's
+    /// still running.
+    pub fn poll(&self, _handle: &MeHandle) -> Option<i32> {
+        // SAFETY: Reading from uncached memory — volatile access
+        let st = unsafe { core::ptr::read_volatile(&raw const (*self.shared).status) };
+        if st == status::DONE {
+            let result = unsafe { core::ptr::read_volatile(&raw const (*self.shared).result) };
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    /// Block until the task completes and return its result.
+    pub fn wait(&self, handle: &MeHandle) -> i32 {
+        loop {
+            if let Some(result) = self.poll(handle) {
+                return result;
+            }
+            core::hint::spin_loop();
+        }
+    }
+
+    /// Check if the executor is idle (no task running).
+    pub fn is_idle(&self) -> bool {
+        let st = unsafe { core::ptr::read_volatile(&raw const (*self.shared).status) };
+        st != status::RUNNING
+    }
+
+    /// Reset the executor state to idle.
+    ///
+    /// Call this after retrieving a result to allow submitting new tasks.
+    pub fn reset(&mut self) {
+        unsafe {
+            core::ptr::write_volatile(&raw mut (*self.shared).status, status::IDLE);
+        }
+    }
+}
+
+#[cfg(feature = "kernel")]
+impl Drop for MeExecutor {
+    fn drop(&mut self) {
+        // SAFETY: We own these allocations
+        unsafe {
+            crate::sys::sceKernelFreePartitionMemory(self.stack_block);
+            crate::sys::sceKernelFreePartitionMemory(self.shared_block);
+        }
+    }
 }

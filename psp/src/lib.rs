@@ -39,12 +39,19 @@ pub mod debug;
 
 #[macro_use]
 mod vfpu;
+pub mod audio_mixer;
+pub mod cache;
+pub mod dma;
 mod eabi;
+pub mod framebuffer;
 #[cfg(feature = "kernel")]
 pub mod hw;
 pub mod math;
 #[cfg(feature = "kernel")]
 pub mod me;
+pub mod mem;
+pub mod simd;
+pub mod sync;
 pub mod sys;
 #[cfg(not(feature = "stub-only"))]
 pub mod test_runner;
