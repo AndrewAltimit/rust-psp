@@ -61,8 +61,19 @@ impl Thread {
             return Err(io::Error::from_raw_os_error(-id));
         }
 
-        // Pass the boxed ThreadInit pointer as the thread argument
-        let ret = unsafe { __psp_start_thread(id, 4, p as *mut u8) };
+        // Pass the pointer value as the thread argument.
+        // sceKernelStartThread copies arg_len bytes from argp onto the new
+        // thread's stack, so we pass &p (the address of the pointer variable)
+        // with arg_len = size_of::<*mut _>() so the kernel copies the raw
+        // pointer value. The entry trampoline then reads it back.
+        let mut arg = p as usize;
+        let ret = unsafe {
+            __psp_start_thread(
+                id,
+                core::mem::size_of::<usize>() as u32,
+                &mut arg as *mut usize as *mut u8,
+            )
+        };
 
         if ret < 0 {
             drop(unsafe { Box::from_raw(p) });
@@ -99,10 +110,14 @@ impl Thread {
 
 /// Thread entry trampoline. Called by the PSP OS.
 ///
-/// `arg_len` is unused (always 4), `argp` is a pointer to the ThreadInit.
+/// `argp` points to the copied argument data on the thread's stack, which
+/// contains the raw pointer value (a `usize`) to the heap-allocated
+/// `ThreadInit`.
 unsafe extern "C" fn thread_entry(_arg_len: usize, argp: *mut u8) -> i32 {
+    // Read the pointer value that was copied onto our stack by the kernel
+    let ptr_val = unsafe { core::ptr::read_unaligned(argp as *const usize) };
     let init: Box<crate::thread::ThreadInit> =
-        unsafe { Box::from_raw(argp as *mut crate::thread::ThreadInit) };
+        unsafe { Box::from_raw(ptr_val as *mut crate::thread::ThreadInit) };
     let main = init.init();
     main();
     0

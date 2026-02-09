@@ -9,6 +9,7 @@ unsafe extern "C" {
         -> i32;
     fn __psp_evflag_set(id: i32, bits: u32) -> i32;
     fn __psp_evflag_clear(id: i32, bits: u32) -> i32;
+    fn __psp_delay_thread(us: u32) -> i32;
 }
 
 // Wait mode flags for sceKernelWaitEventFlag
@@ -79,21 +80,18 @@ impl Condvar {
             return;
         }
 
-        // Wake all waiters: set the bit once per waiter.
-        // Each waiter uses WAIT_CLEAR, so it atomically clears the bit when woken.
-        // We re-set the bit for each waiter to ensure all get woken.
-        let mut remaining = self.num_waiters.load(Ordering::Acquire);
-        while remaining > 0 {
-            unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
-            // Brief yield to let a waiter consume the signal
-            let prev = remaining;
-            remaining = self.num_waiters.load(Ordering::Acquire);
-            if remaining >= prev {
-                // No waiter consumed it yet or new waiters arrived; avoid infinite loop
-                // by just breaking after one more attempt
-                unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
+        // Wake all waiters one at a time. Because each waiter uses WAIT_CLEAR,
+        // only one waiter is woken per sceKernelSetEventFlag call. We must yield
+        // between iterations so the woken thread gets scheduled and decrements
+        // num_waiters before we re-check.
+        loop {
+            let remaining = self.num_waiters.load(Ordering::Acquire);
+            if remaining == 0 {
                 break;
             }
+            unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
+            // Yield the current timeslice so the woken thread can run
+            unsafe { __psp_delay_thread(0) };
         }
     }
 
