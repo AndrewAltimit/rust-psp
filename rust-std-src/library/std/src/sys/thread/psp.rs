@@ -62,11 +62,16 @@ impl Thread {
         }
 
         // Pass the pointer value as the thread argument.
-        // sceKernelStartThread copies arg_len bytes from argp onto the new
-        // thread's stack, so we pass &p (the address of the pointer variable)
-        // with arg_len = size_of::<*mut _>() so the kernel copies the raw
-        // pointer value. The entry trampoline then reads it back.
+        //
+        // SAFETY: sceKernelStartThread *synchronously* copies `arg_len` bytes
+        // from `argp` onto the new thread's stack before returning to the
+        // caller. The new thread then reads the copied data from its own
+        // stack via `argp` in the entry trampoline. Because the copy happens
+        // inside the syscall (before it returns), `arg` on our stack is valid
+        // for the entire duration it is read. A compiler fence ensures the
+        // write to `arg` is visible before the syscall.
         let mut arg = p as usize;
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
         let ret = unsafe {
             __psp_start_thread(
                 id,

@@ -1,9 +1,13 @@
 use crate::sys::{self, SceSysMemBlockTypes, SceSysMemPartitionId, SceUid};
 use core::{mem, ptr};
 
-/// Maximum supported alignment. Alignments larger than this will fail allocation.
-/// This limit exists because we store the padding offset in a single byte.
-const MAX_ALIGN: usize = 255;
+/// Maximum supported alignment (must be a power of 2).
+///
+/// We store the alignment padding offset in a single `u8`. For an alignment of
+/// 128, the worst-case padding is `1 + 127 = 128`, which is the largest value
+/// that fits in `u8`. An alignment of 256 would require up to 256 bytes of
+/// padding, overflowing the `u8` storage.
+const MAX_ALIGN: usize = 128;
 
 /// Allocate memory with alignment support.
 ///

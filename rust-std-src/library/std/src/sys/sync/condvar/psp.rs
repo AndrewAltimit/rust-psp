@@ -9,21 +9,23 @@ unsafe extern "C" {
         -> i32;
     fn __psp_evflag_set(id: i32, bits: u32) -> i32;
     fn __psp_evflag_clear(id: i32, bits: u32) -> i32;
-    fn __psp_delay_thread(us: u32) -> i32;
 }
 
 // Wait mode flags for sceKernelWaitEventFlag
 const WAIT_OR: i32 = 0x01;
 const WAIT_CLEAR: i32 = 0x20;
 
-// Signal bit used for condvar notification
-const NOTIFY_BIT: u32 = 0x01;
-
+/// Condvar using per-waiter event flag bits.
+///
+/// Each waiter claims a unique bit (0-31) from the event flag. `notify_one`
+/// sets a single active waiter's bit; `notify_all` sets all active bits
+/// atomically in one syscall. This avoids the fragile yield-loop approach
+/// and correctly handles priority inversion on PSP's single-core scheduler.
 pub struct Condvar {
     // Event flag ID for signaling waiters
     evflag_id: AtomicI32,
-    // Number of threads currently waiting
-    num_waiters: AtomicU32,
+    // Bitmask of bits currently claimed by waiting threads
+    active_waiters: AtomicU32,
 }
 
 unsafe impl Send for Condvar {}
@@ -33,7 +35,7 @@ impl Condvar {
     pub const fn new() -> Condvar {
         Condvar {
             evflag_id: AtomicI32::new(-1),
-            num_waiters: AtomicU32::new(0),
+            active_waiters: AtomicU32::new(0),
         }
     }
 
@@ -45,7 +47,7 @@ impl Condvar {
 
         // Try to create the event flag
         let name = b"std_cv\0";
-        // MULTI wait mode allows multiple threads to wait
+        // MULTI wait mode (0x200) allows multiple threads to wait simultaneously
         let new_id = unsafe { __psp_evflag_create(name.as_ptr(), 0x200, 0) };
 
         if new_id >= 0 {
@@ -66,11 +68,43 @@ impl Condvar {
         }
     }
 
+    /// Claim a free bit from the active_waiters bitmask.
+    /// Returns the bit mask (a single set bit), or 0 if all 32 bits are in use.
+    fn claim_bit(&self) -> u32 {
+        loop {
+            let active = self.active_waiters.load(Ordering::Acquire);
+            let free = !active;
+            if free == 0 {
+                return 0; // all 32 bits in use
+            }
+            let bit = free & free.wrapping_neg(); // lowest free bit
+            match self.active_waiters.compare_exchange_weak(
+                active,
+                active | bit,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return bit,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Release a previously claimed bit.
+    fn release_bit(&self, bit: u32) {
+        self.active_waiters.fetch_and(!bit, Ordering::Release);
+    }
+
     pub fn notify_one(&self) {
         let id = self.ensure_init();
-        if id >= 0 && self.num_waiters.load(Ordering::Acquire) > 0 {
-            // Set the notification bit -- one waiter will pick it up and clear it
-            unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
+        if id < 0 {
+            return;
+        }
+        let active = self.active_waiters.load(Ordering::Acquire);
+        if active != 0 {
+            // Pick the lowest active bit (one arbitrary waiter)
+            let one_bit = active & active.wrapping_neg();
+            unsafe { __psp_evflag_set(id, one_bit) };
         }
     }
 
@@ -79,19 +113,10 @@ impl Condvar {
         if id < 0 {
             return;
         }
-
-        // Wake all waiters one at a time. Because each waiter uses WAIT_CLEAR,
-        // only one waiter is woken per sceKernelSetEventFlag call. We must yield
-        // between iterations so the woken thread gets scheduled and decrements
-        // num_waiters before we re-check.
-        loop {
-            let remaining = self.num_waiters.load(Ordering::Acquire);
-            if remaining == 0 {
-                break;
-            }
-            unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
-            // Yield the current timeslice so the woken thread can run
-            unsafe { __psp_delay_thread(0) };
+        let active = self.active_waiters.load(Ordering::Acquire);
+        if active != 0 {
+            // Set ALL active waiter bits atomically -- wakes every waiter
+            unsafe { __psp_evflag_set(id, active) };
         }
     }
 
@@ -101,23 +126,26 @@ impl Condvar {
             return;
         }
 
-        self.num_waiters.fetch_add(1, Ordering::AcqRel);
+        let my_bit = self.claim_bit();
+        if my_bit == 0 {
+            return; // shouldn't happen in practice (32 concurrent waiters)
+        }
 
-        // Unlock the mutex, wait for signal, re-lock
+        // Unlock the mutex, wait for our specific bit, re-lock
         unsafe { mutex.unlock() };
 
         let mut out_bits: u32 = 0;
         unsafe {
             __psp_evflag_wait(
                 id,
-                NOTIFY_BIT,
+                my_bit,
                 WAIT_OR | WAIT_CLEAR,
                 &mut out_bits,
                 core::ptr::null_mut(), // infinite timeout
             );
         }
 
-        self.num_waiters.fetch_sub(1, Ordering::AcqRel);
+        self.release_bit(my_bit);
 
         mutex.lock();
     }
@@ -128,7 +156,10 @@ impl Condvar {
             return false;
         }
 
-        self.num_waiters.fetch_add(1, Ordering::AcqRel);
+        let my_bit = self.claim_bit();
+        if my_bit == 0 {
+            return false;
+        }
 
         unsafe { mutex.unlock() };
 
@@ -137,10 +168,10 @@ impl Condvar {
         let mut out_bits: u32 = 0;
 
         let ret = unsafe {
-            __psp_evflag_wait(id, NOTIFY_BIT, WAIT_OR | WAIT_CLEAR, &mut out_bits, &mut timeout)
+            __psp_evflag_wait(id, my_bit, WAIT_OR | WAIT_CLEAR, &mut out_bits, &mut timeout)
         };
 
-        self.num_waiters.fetch_sub(1, Ordering::AcqRel);
+        self.release_bit(my_bit);
 
         mutex.lock();
 

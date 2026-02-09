@@ -172,29 +172,30 @@ fn generate_std_target_json() -> Result<std::path::PathBuf> {
     let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let output = Command::new(&rustc)
         .args([
-            "-Z", "unstable-options",
-            "--print", "target-spec-json",
-            "--target", "mipsel-sony-psp",
+            "-Z",
+            "unstable-options",
+            "--print",
+            "target-spec-json",
+            "--target",
+            "mipsel-sony-psp",
         ])
         .output()
         .context("failed to run `rustc --print target-spec-json`")?;
     if !output.status.success() {
         bail!("`rustc --print target-spec-json` failed");
     }
-    let spec_str = String::from_utf8(output.stdout)
-        .context("target spec JSON is not UTF-8")?;
+    let spec_str = String::from_utf8(output.stdout).context("target spec JSON is not UTF-8")?;
 
     // Parse, patch metadata.std to true, and write back.
-    let mut spec: serde_json::Value = serde_json::from_str(&spec_str)
-        .context("failed to parse target spec JSON")?;
+    let mut spec: serde_json::Value =
+        serde_json::from_str(&spec_str).context("failed to parse target spec JSON")?;
     if let Some(metadata) = spec.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.insert("std".to_string(), serde_json::Value::Bool(true));
     }
 
-    let patched = serde_json::to_string_pretty(&spec)
-        .context("failed to serialize patched target spec")?;
-    fs::write(&json_path, &patched)
-        .context("failed to write custom target JSON")?;
+    let patched =
+        serde_json::to_string_pretty(&spec).context("failed to serialize patched target spec")?;
+    fs::write(&json_path, &patched).context("failed to write custom target JSON")?;
 
     eprintln!(
         "[NOTE]: Generated custom target spec with std=true at {}",
@@ -285,10 +286,64 @@ fn prepare_psp_sysroot() -> Result<()> {
     // Overlay our PSP-specific files on top.
     copy_dir_recursive(&overlay_src.join("library"), &dest.join("library"))?;
 
+    // Patch std's lib.rs to make it unconditionally stable.
+    //
+    // Cargo's -Zbuild-std ALWAYS passes `--cfg restricted_std` for custom
+    // targets, which makes std an unstable library that requires
+    // `#![feature(restricted_std)]` in every downstream crate (including
+    // third-party crates like serde). The `metadata.std` field in the target
+    // JSON is informational only -- cargo ignores it.
+    //
+    // We patch the two conditional stability attributes:
+    //   #![cfg_attr(not(restricted_std), stable(...))]   -> #![stable(...)]
+    //   #![cfg_attr(restricted_std, unstable(...))]       -> removed
+    patch_std_stability(&dest.join("library/std/src/lib.rs"))?;
+
     // Write a timestamp marker.
     fs::write(&marker, "").context("failed to write sysroot stamp")?;
 
     eprintln!("[NOTE]: PSP std sysroot prepared successfully.");
+    Ok(())
+}
+
+/// Patch `library/std/src/lib.rs` so std is unconditionally stable.
+///
+/// Cargo's `-Zbuild-std` passes `--cfg restricted_std` for every custom
+/// target.  That cfg selects the `unstable(feature = "restricted_std")`
+/// stability attribute, which forces every downstream crate to carry
+/// `#![feature(restricted_std)]` -- including third-party crates.
+///
+/// This function rewrites the two conditional attributes:
+///   `#![cfg_attr(not(restricted_std), stable(...))]`  ->  `#![stable(...)]`
+///   `#![cfg_attr(restricted_std, unstable(...))]`     ->  disabled
+fn patch_std_stability(lib_rs: &std::path::Path) -> Result<()> {
+    let content = fs::read_to_string(lib_rs)
+        .with_context(|| format!("failed to read {}", lib_rs.display()))?;
+
+    // Replace the conditional stable attribute with an unconditional one.
+    let patched = content.replace(
+        "#![cfg_attr(not(restricted_std), stable(feature = \"rust1\", since = \"1.0.0\"))]",
+        "#![stable(feature = \"rust1\", since = \"1.0.0\")]",
+    );
+
+    // Disable the restricted_std unstable attribute by changing the condition
+    // to `any()` (always false), so it never applies even with --cfg restricted_std.
+    let patched = patched.replace(
+        "cfg_attr(\n    restricted_std,\n    unstable(\n        feature = \"restricted_std\",",
+        "cfg_attr(\n    any(), /* patched: PSP std is stable */\n    unstable(\n        feature = \"restricted_std\",",
+    );
+
+    if patched == content {
+        eprintln!(
+            "[WARN]: Could not find restricted_std attributes to patch in {}",
+            lib_rs.display()
+        );
+    } else {
+        fs::write(lib_rs, &patched)
+            .with_context(|| format!("failed to write patched {}", lib_rs.display()))?;
+        eprintln!("[NOTE]: Patched std stability attributes (removed restricted_std gate).");
+    }
+
     Ok(())
 }
 
@@ -427,8 +482,8 @@ fn main() -> Result<()> {
     // rustc does not apply the restricted_std stability gate to downstream crates.
     let target_arg: std::ffi::OsString = if build_std {
         prepare_psp_sysroot().context("failed to prepare PSP std sysroot")?;
-        let json_path = generate_std_target_json()
-            .context("failed to generate custom target JSON")?;
+        let json_path =
+            generate_std_target_json().context("failed to generate custom target JSON")?;
         json_path.into_os_string()
     } else {
         "mipsel-sony-psp".into()

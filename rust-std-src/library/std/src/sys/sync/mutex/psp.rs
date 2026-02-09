@@ -52,9 +52,13 @@ impl Mutex {
                     self.state.store(1, Ordering::Release);
                 } else {
                     // Reset to uninitialized so future attempts can retry,
-                    // then abort since the mutex is unusable.
+                    // then abort. Using panic!() here could recurse during
+                    // global initialization (panic handler may need a mutex).
                     self.state.store(0, Ordering::Release);
-                    panic!("failed to create PSP LwMutex");
+                    unsafe extern "C" {
+                        fn __psp_abort() -> !;
+                    }
+                    unsafe { __psp_abort() };
                 }
                 return;
             }
