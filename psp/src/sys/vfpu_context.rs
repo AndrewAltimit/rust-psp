@@ -86,7 +86,7 @@ impl Context {
                 5 => restore!(&self.matrices[idx], C500, C510, C520, C530),
                 6 => restore!(&self.matrices[idx], C600, C610, C620, C630),
                 7 => restore!(&self.matrices[idx], C700, C710, C720, C730),
-                _ => core::intrinsics::unreachable(),
+                _ => unreachable!(),
             }
 
             self.saved &= !MatrixSet::from_bits_retain(1 << matrix_idx);
@@ -119,7 +119,7 @@ impl Context {
                 5 => save!(&mut self.matrices[idx], C500, C510, C520, C530),
                 6 => save!(&mut self.matrices[idx], C600, C610, C620, C630),
                 7 => save!(&mut self.matrices[idx], C700, C710, C720, C730),
-                _ => core::intrinsics::unreachable(),
+                _ => unreachable!(),
             }
 
             self.saved |= MatrixSet::from_bits_retain(1 << matrix_idx);

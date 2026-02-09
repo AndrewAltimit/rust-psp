@@ -71,7 +71,7 @@ impl BmpHeader {
         put!(self.print_resolution_y, u32);
         put!(self.palette_color_count, u32);
         put!(self.important_colors, u32);
-        let _ = off;
+        debug_assert_eq!(off, Self::BYTES);
         buf
     }
 }
@@ -79,7 +79,7 @@ impl BmpHeader {
 fn rgba_to_bgra(rgba: u32) -> u32 {
     // 0xAABBGGRR -> 0xAARRGGBB
 
-    core::intrinsics::bswap(rgba << 8 | rgba >> 24)
+    (rgba << 8 | rgba >> 24).swap_bytes()
 }
 
 fn rgb565_to_bgra(rgb565: u16) -> u32 {

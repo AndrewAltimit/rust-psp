@@ -3,8 +3,8 @@ use embedded_graphics::{
     pixelcolor::Rgb888,
     prelude::*,
     primitives::{
-        circle::Circle, line::Line, rectangle::Rectangle, triangle::Triangle, PrimitiveStyle,
-        PrimitiveStyleBuilder, Styled,
+        PrimitiveStyle, PrimitiveStyleBuilder, Styled, circle::Circle, line::Line,
+        rectangle::Rectangle, triangle::Triangle,
     },
 };
 

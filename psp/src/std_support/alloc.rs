@@ -22,7 +22,12 @@ pub unsafe extern "C" fn __psp_alloc(size: u32, align: u32) -> *mut u8 {
         return ptr::null_mut();
     }
 
-    let total = size as usize + mem::size_of::<SceUid>() + align;
+    let Some(total) = (size as usize)
+        .checked_add(mem::size_of::<SceUid>())
+        .and_then(|s| s.checked_add(align))
+    else {
+        return ptr::null_mut();
+    };
 
     let id = unsafe {
         sys::sceKernelAllocPartitionMemory(
@@ -44,7 +49,12 @@ pub unsafe extern "C" fn __psp_alloc(size: u32, align: u32) -> *mut u8 {
         *p.cast() = id;
         p = p.add(mem::size_of::<SceUid>());
         // Align and store padding count.
-        let align_padding = 1 + p.add(1).align_offset(align);
+        let offset = p.add(1).align_offset(align);
+        if offset == usize::MAX {
+            sys::sceKernelFreePartitionMemory(id);
+            return ptr::null_mut();
+        }
+        let align_padding = 1 + offset;
         *p.add(align_padding - 1) = align_padding as u8;
         p.add(align_padding)
     }

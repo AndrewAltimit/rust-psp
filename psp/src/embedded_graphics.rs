@@ -2,18 +2,17 @@
 
 use crate::sys;
 use crate::{BUF_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
-use core::convert::TryInto;
 use embedded_graphics_core::{Pixel, draw_target::*, geometry::Size, pixelcolor::*, prelude::*};
 
 pub struct Framebuffer {
-    vram_base: *mut u16,
+    vram_base: *mut u32,
 }
 
 impl Framebuffer {
     pub fn new() -> Self {
         unsafe {
             sys::sceDisplaySetMode(sys::DisplayMode::Lcd, 480, 272);
-            let vram_base = (0x4000_0000u32 | sys::sceGeEdramGetAddr() as u32) as *mut u16;
+            let vram_base = (0x4000_0000u32 | sys::sceGeEdramGetAddr() as u32) as *mut u32;
             sys::sceDisplaySetFrameBuf(
                 vram_base as *const u8,
                 BUF_WIDTH as usize,
@@ -59,7 +58,8 @@ impl Framebuffer {
 
         if let Ok((x @ 0..SCREEN_WIDTH, y @ 0..SCREEN_HEIGHT)) = coord.try_into() {
             unsafe {
-                let ptr = (self.vram_base as *mut u32)
+                let ptr = self
+                    .vram_base
                     .offset(x as isize)
                     .offset((y * BUF_WIDTH) as isize);
 

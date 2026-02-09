@@ -126,14 +126,22 @@ fn main() -> Result<()> {
         strings.insert("TITLE".to_string(), args.title);
 
         // Default Values
-        strings.insert("CATEGORY".to_string(), "MG".to_string());
-        strings.insert("DISC_ID".to_string(), "UCJS10041".to_string());
-        strings.insert("DISC_VERSION".to_string(), "1.00".to_string());
-        strings.insert("PSP_SYSTEM_VER".to_string(), "1.00".to_string());
+        strings
+            .entry("CATEGORY".to_string())
+            .or_insert_with(|| "MG".to_string());
+        strings
+            .entry("DISC_ID".to_string())
+            .or_insert_with(|| "UCJS10041".to_string());
+        strings
+            .entry("DISC_VERSION".to_string())
+            .or_insert_with(|| "1.00".to_string());
+        strings
+            .entry("PSP_SYSTEM_VER".to_string())
+            .or_insert_with(|| "1.00".to_string());
 
-        dwords.insert("BOOTABLE".to_string(), 1);
-        dwords.insert("PARENTAL_LEVEL".to_string(), 1);
-        dwords.insert("REGION".to_string(), 0x8000);
+        dwords.entry("BOOTABLE".to_string()).or_insert(1);
+        dwords.entry("PARENTAL_LEVEL".to_string()).or_insert(1);
+        dwords.entry("REGION".to_string()).or_insert(0x8000);
     }
 
     // Validation table: (EntryType, valid_for_WG, valid_for_MS, valid_for_MG, valid_for_UG)

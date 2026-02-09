@@ -235,7 +235,7 @@ fn main() -> Result<()> {
         le: Endian::Little,
     };
 
-    let out_file = args.output.unwrap_or(args.input.with_extension(".prx.min"));
+    let out_file = args.output.unwrap_or(args.input.with_extension("prx.min"));
     let mut out = File::create(&out_file)
         .with_context(|| format!("failed to create output: {}", out_file.display()))?;
 

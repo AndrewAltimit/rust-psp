@@ -61,7 +61,12 @@ unsafe impl GlobalAlloc for SystemAlloc {
         ptr = ptr.add(mem::size_of::<SceUid>());
 
         // We must add at least one, to store this value.
-        let align_padding = 1 + ptr.add(1).align_offset(layout.align());
+        let offset = ptr.add(1).align_offset(layout.align());
+        if offset == usize::MAX {
+            sys::sceKernelFreePartitionMemory(id);
+            return ptr::null_mut();
+        }
+        let align_padding = 1 + offset;
         *ptr.add(align_padding - 1) = align_padding as u8;
         ptr.add(align_padding)
     }

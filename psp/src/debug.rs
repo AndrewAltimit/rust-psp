@@ -300,7 +300,7 @@ impl<'a> Iterator for LineIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.pos < core::cmp::min(self.buf.written + 1, ROWS) {
-            let idx = if self.buf.written > ROWS {
+            let idx = if self.buf.written >= ROWS {
                 (self.buf.written + 1 + self.pos) % ROWS
             } else {
                 self.pos

@@ -88,7 +88,7 @@ static mut VFPU_CONTEXT: Option<Context> = None;
 unsafe fn get_context_unchecked() -> &'static mut Context {
     match VFPU_CONTEXT.as_mut() {
         Some(r) => r,
-        None => core::intrinsics::unreachable(),
+        None => unreachable!(),
     }
 }
 
@@ -670,7 +670,7 @@ pub unsafe extern "C" fn sceGumUpdateMatrix() {
                 1 => MatrixMode::View,
                 2 => MatrixMode::Model,
                 3 => MatrixMode::Texture,
-                _ => core::intrinsics::unreachable(),
+                _ => unreachable!(),
             };
 
             sys::sceGuSetMatrix(mode, &*STACK_DEPTH[i]);

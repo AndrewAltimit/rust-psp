@@ -2,10 +2,10 @@ use core::str;
 use numtoa::NumToA;
 
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
+    mono_font::{MonoTextStyle, ascii::FONT_6X10},
     pixelcolor::Rgb888,
     prelude::*,
-    primitives::{rectangle::Rectangle, PrimitiveStyle, PrimitiveStyleBuilder, Styled},
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Styled, rectangle::Rectangle},
     text::{Baseline, Text},
 };
 

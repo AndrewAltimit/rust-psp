@@ -1,10 +1,8 @@
 #![no_std]
 #![no_main]
-#![feature(exclusive_range_pattern)]
-#![feature(half_open_range_patterns)]
 
 use psp_paint_mode::{
-    convert_analog_to_delta_with_sensitivity_deadzone, draw_debug_textbox, DrawObject,
+    DrawObject, convert_analog_to_delta_with_sensitivity_deadzone, draw_debug_textbox,
 };
 
 use embedded_graphics::pixelcolor::Rgb888;
