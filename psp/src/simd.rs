@@ -12,8 +12,6 @@
 //! - **Color operations**: RGBA blending, HSV↔RGB conversion
 //! - **Easing functions**: Quadratic, cubic, spring-damped interpolation
 
-#![allow(unsafe_op_in_unsafe_fn)]
-
 // ── Vector Types ────────────────────────────────────────────────────
 
 /// A 4-component f32 vector, 16-byte aligned for VFPU register loads.

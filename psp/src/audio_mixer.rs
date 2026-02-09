@@ -327,9 +327,15 @@ impl Mixer {
                 let src_l = ch.buffer[buf_pos] as i32;
                 let src_r = ch.buffer[buf_pos + 1] as i32;
 
-                // Apply channel volume, fade, and master volume
-                let mixed_l = (src_l * vol_l / 0x8000 * fade / 256 * master_vol / 0x8000) as i16;
-                let mixed_r = (src_r * vol_r / 0x8000 * fade / 256 * master_vol / 0x8000) as i16;
+                // Apply channel volume, fade, and master volume.
+                // Use i64 intermediates to prevent overflow when
+                // src ~ 32000 and vol = 0x8000.
+                let mixed_l = (src_l as i64 * vol_l as i64 / 0x8000 * fade as i64 / 256
+                    * master_vol as i64
+                    / 0x8000) as i16;
+                let mixed_r = (src_r as i64 * vol_r as i64 / 0x8000 * fade as i64 / 256
+                    * master_vol as i64
+                    / 0x8000) as i16;
 
                 // Saturating add to output
                 let out_idx = i * 2;

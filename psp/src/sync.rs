@@ -501,3 +501,241 @@ impl<T: core::fmt::Debug> core::fmt::Debug for UncachedBox<T> {
             .finish()
     }
 }
+
+// ── SyncError ───────────────────────────────────────────────────────
+
+/// Error from a PSP synchronization operation, wrapping the raw SCE error code.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct SyncError(pub i32);
+
+impl SyncError {
+    pub fn code(self) -> i32 {
+        self.0
+    }
+}
+
+impl core::fmt::Debug for SyncError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "SyncError({:#010x})", self.0 as u32)
+    }
+}
+
+impl core::fmt::Display for SyncError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "sync error {:#010x}", self.0 as u32)
+    }
+}
+
+// ── Semaphore ───────────────────────────────────────────────────────
+
+/// A kernel semaphore with RAII cleanup.
+///
+/// Provides blocking, non-blocking, and timed wait operations backed by
+/// `sceKernelCreateSema` / `sceKernelDeleteSema`.
+///
+/// # Example
+///
+/// ```ignore
+/// use psp::sync::Semaphore;
+///
+/// let sem = Semaphore::new(b"MySema\0", 0, 1).unwrap();
+/// // In producer: sem.signal(1);
+/// // In consumer: sem.wait();
+/// ```
+pub struct Semaphore {
+    id: crate::sys::SceUid,
+}
+
+// SAFETY: PSP kernel semaphores are designed for cross-thread use.
+unsafe impl Send for Semaphore {}
+unsafe impl Sync for Semaphore {}
+
+impl Semaphore {
+    /// Create a new kernel semaphore.
+    ///
+    /// - `name`: null-terminated name (e.g. `b"MySema\0"`)
+    /// - `init_count`: initial semaphore count
+    /// - `max_count`: maximum semaphore count
+    pub fn new(name: &[u8], init_count: i32, max_count: i32) -> Result<Self, SyncError> {
+        let id = unsafe {
+            crate::sys::sceKernelCreateSema(
+                name.as_ptr(),
+                0, // default attributes
+                init_count,
+                max_count,
+                core::ptr::null_mut(),
+            )
+        };
+        if id.0 < 0 {
+            Err(SyncError(id.0))
+        } else {
+            Ok(Self { id })
+        }
+    }
+
+    /// Wait (block) until the semaphore count is >= 1, then decrement.
+    pub fn wait(&self) -> Result<(), SyncError> {
+        let ret = unsafe { crate::sys::sceKernelWaitSema(self.id, 1, core::ptr::null_mut()) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Wait with a timeout in microseconds.
+    ///
+    /// Returns `Err` on timeout or other error.
+    pub fn wait_timeout(&self, us: u32) -> Result<(), SyncError> {
+        let mut timeout = us;
+        let ret = unsafe { crate::sys::sceKernelWaitSema(self.id, 1, &mut timeout) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Try to decrement the semaphore without blocking.
+    ///
+    /// Returns `Err` if the count is zero.
+    pub fn try_wait(&self) -> Result<(), SyncError> {
+        let ret = unsafe { crate::sys::sceKernelPollSema(self.id, 1) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Increment the semaphore count by `count`.
+    pub fn signal(&self, count: i32) -> Result<(), SyncError> {
+        let ret = unsafe { crate::sys::sceKernelSignalSema(self.id, count) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Get the kernel UID.
+    pub fn id(&self) -> crate::sys::SceUid {
+        self.id
+    }
+}
+
+impl Drop for Semaphore {
+    fn drop(&mut self) {
+        unsafe {
+            crate::sys::sceKernelDeleteSema(self.id);
+        }
+    }
+}
+
+// ── EventFlag ───────────────────────────────────────────────────────
+
+/// A kernel event flag with RAII cleanup.
+///
+/// Provides a bitmask-based synchronization primitive backed by
+/// `sceKernelCreateEventFlag` / `sceKernelDeleteEventFlag`.
+///
+/// # Example
+///
+/// ```ignore
+/// use psp::sync::EventFlag;
+/// use psp::sys::{EventFlagAttributes, EventFlagWaitTypes};
+///
+/// let flag = EventFlag::new(b"MyFlag\0", EventFlagAttributes::empty(), 0).unwrap();
+/// // In producer: flag.set(0x01);
+/// // In consumer: flag.wait(0x01, EventFlagWaitTypes::OR | EventFlagWaitTypes::CLEAR);
+/// ```
+pub struct EventFlag {
+    id: crate::sys::SceUid,
+}
+
+// SAFETY: PSP kernel event flags are designed for cross-thread use.
+unsafe impl Send for EventFlag {}
+unsafe impl Sync for EventFlag {}
+
+impl EventFlag {
+    /// Create a new kernel event flag.
+    ///
+    /// - `name`: null-terminated name
+    /// - `attr`: attributes (e.g. `EventFlagAttributes::WAIT_MULTIPLE`)
+    /// - `init_pattern`: initial bit pattern
+    pub fn new(
+        name: &[u8],
+        attr: crate::sys::EventFlagAttributes,
+        init_pattern: u32,
+    ) -> Result<Self, SyncError> {
+        let id = unsafe {
+            crate::sys::sceKernelCreateEventFlag(
+                name.as_ptr(),
+                attr,
+                init_pattern as i32,
+                core::ptr::null_mut(),
+            )
+        };
+        if id.0 < 0 {
+            Err(SyncError(id.0))
+        } else {
+            Ok(Self { id })
+        }
+    }
+
+    /// Wait for bits matching `pattern` according to `wait_type`.
+    ///
+    /// Returns the bit pattern that was matched.
+    pub fn wait(
+        &self,
+        pattern: u32,
+        wait_type: crate::sys::EventFlagWaitTypes,
+    ) -> Result<u32, SyncError> {
+        let mut out_bits: u32 = 0;
+        let ret = unsafe {
+            crate::sys::sceKernelWaitEventFlag(
+                self.id,
+                pattern,
+                wait_type,
+                &mut out_bits,
+                core::ptr::null_mut(),
+            )
+        };
+        if ret < 0 {
+            Err(SyncError(ret))
+        } else {
+            Ok(out_bits)
+        }
+    }
+
+    /// Set bits in the event flag.
+    pub fn set(&self, bits: u32) -> Result<(), SyncError> {
+        let ret = unsafe { crate::sys::sceKernelSetEventFlag(self.id, bits) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Clear bits in the event flag.
+    ///
+    /// Bits that are 1 in `bits` are *kept*; bits that are 0 are cleared.
+    /// (This matches the PSP kernel semantics: the flag is AND'd with `bits`.)
+    pub fn clear(&self, bits: u32) -> Result<(), SyncError> {
+        let ret = unsafe { crate::sys::sceKernelClearEventFlag(self.id, bits) };
+        if ret < 0 { Err(SyncError(ret)) } else { Ok(()) }
+    }
+
+    /// Poll for matching bits without blocking.
+    ///
+    /// Returns the matched bit pattern, or `Err` if no match.
+    pub fn poll(
+        &self,
+        pattern: u32,
+        wait_type: crate::sys::EventFlagWaitTypes,
+    ) -> Result<u32, SyncError> {
+        let mut out_bits: u32 = 0;
+        let ret = unsafe {
+            crate::sys::sceKernelPollEventFlag(self.id, pattern, wait_type, &mut out_bits)
+        };
+        if ret < 0 {
+            Err(SyncError(ret))
+        } else {
+            Ok(out_bits)
+        }
+    }
+
+    /// Get the kernel UID.
+    pub fn id(&self) -> crate::sys::SceUid {
+        self.id
+    }
+}
+
+impl Drop for EventFlag {
+    fn drop(&mut self) {
+        unsafe {
+            crate::sys::sceKernelDeleteEventFlag(self.id);
+        }
+    }
+}

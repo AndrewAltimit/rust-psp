@@ -180,6 +180,11 @@ mod status {
 ///
 /// This struct lives in uncached memory. The ME writes `status` and
 /// `result` when the task completes; the main CPU reads them.
+///
+/// `real_task` and `real_arg` are written by the main CPU before booting
+/// the ME. The ME wrapper reads them from here rather than from
+/// `boot_params`, avoiding a race where `boot_params` would need to be
+/// written twice.
 #[cfg(feature = "kernel")]
 #[repr(C)]
 struct MeSharedState {
@@ -187,7 +192,11 @@ struct MeSharedState {
     status: u32,
     /// Task return value (valid when `status == DONE`).
     result: i32,
-    /// Boot parameters for the ME.
+    /// The actual user task, stored separately from boot_params.
+    real_task: MeTask,
+    /// The actual user argument, stored separately from boot_params.
+    real_arg: i32,
+    /// Boot parameters for the ME (always points to the wrapper).
     boot_params: MeBootParams,
 }
 
@@ -295,13 +304,13 @@ impl MeExecutor {
     /// - The caller must be in kernel mode.
     #[cfg(all(target_os = "psp", feature = "kernel"))]
     pub unsafe fn submit(&mut self, task: MeTask, arg: i32) -> MeHandle {
-        // Wrapper that writes the result and status to shared memory
-        // before returning. The ME cannot call any PSP syscalls, so
-        // the wrapper writes directly to the uncached shared state.
+        // Wrapper that reads the real task from shared state, executes it,
+        // then writes the result and status. The ME cannot call PSP syscalls,
+        // so the wrapper writes directly to the uncached shared state.
         unsafe extern "C" fn me_wrapper(shared_addr: i32) -> i32 {
             let shared = shared_addr as *mut MeSharedState;
-            let task: MeTask = core::ptr::read_volatile(&raw const (*shared).boot_params.task);
-            let arg = core::ptr::read_volatile(&raw const (*shared).boot_params.arg);
+            let task: MeTask = core::ptr::read_volatile(&raw const (*shared).real_task);
+            let arg = core::ptr::read_volatile(&raw const (*shared).real_arg);
 
             let result = task(arg);
 
@@ -315,30 +324,23 @@ impl MeExecutor {
         // Stack grows downward — point to the top
         let stack_top = self.stack_base.add(self.stack_size as usize);
 
-        // Set up the boot parameters in uncached memory
+        // Write the real task and arg to dedicated fields first
         unsafe {
             core::ptr::write_volatile(&raw mut (*self.shared).status, status::RUNNING);
+            core::ptr::write_volatile(&raw mut (*self.shared).real_task, task);
+            core::ptr::write_volatile(&raw mut (*self.shared).real_arg, arg);
+        }
+
+        // Write boot_params once with the wrapper — no second write needed
+        unsafe {
             core::ptr::write_volatile(
                 &raw mut (*self.shared).boot_params,
                 MeBootParams {
-                    task,
-                    arg,
+                    task: me_wrapper,
+                    arg: self.shared as i32,
                     stack_top,
                 },
             );
-        }
-
-        // Create the actual boot params for the wrapper
-        let wrapper_params = MeBootParams {
-            task: me_wrapper,
-            arg: self.shared as i32,
-            stack_top,
-        };
-
-        // Write wrapper params temporarily to the boot_params field
-        // so the ME can read the real task from shared state
-        unsafe {
-            core::ptr::write_volatile(&raw mut (*self.shared).boot_params, wrapper_params);
         }
 
         // Boot the ME

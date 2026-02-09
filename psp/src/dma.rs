@@ -22,6 +22,10 @@
 //! user-space access to the DMA controller for simple memory copies.
 //! For kernel-mode applications, we also provide direct register access
 //! for VRAM blits.
+//!
+//! **Note:** `sceDmacMemcpy` is synchronous — it blocks until the transfer
+//! completes. The `DmaTransfer` handle still provides a polling/blocking
+//! API for consistency, but `is_complete()` always returns `true`.
 
 use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -59,6 +63,10 @@ impl DmaTransfer {
     /// Poll for transfer completion.
     ///
     /// Returns `true` if the transfer has finished.
+    ///
+    /// **Note:** On the PSP, `sceDmacMemcpy` blocks until the DMA transfer
+    /// completes, so this always returns `true`. The polling API exists for
+    /// forward-compatibility if asynchronous DMA is added in the future.
     pub fn is_complete(&self) -> bool {
         if self.completed {
             return true;

@@ -46,6 +46,8 @@ mod eabi;
 pub mod framebuffer;
 #[cfg(feature = "kernel")]
 pub mod hw;
+pub mod input;
+pub mod io;
 pub mod math;
 #[cfg(feature = "kernel")]
 pub mod me;
@@ -55,6 +57,9 @@ pub mod sync;
 pub mod sys;
 #[cfg(not(feature = "stub-only"))]
 pub mod test_runner;
+#[cfg(not(feature = "stub-only"))]
+pub mod thread;
+pub mod time;
 #[cfg(not(feature = "stub-only"))]
 pub mod vram_alloc;
 
