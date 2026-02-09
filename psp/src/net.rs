@@ -113,14 +113,24 @@ pub fn term() {
 ///
 /// `config_index` is 1-based (matches the PSP's Network Settings list).
 /// Blocks until the connection is established or fails.
+/// Uses a default timeout of 30 seconds.
 pub fn connect_ap(config_index: i32) -> Result<(), NetError> {
+    connect_ap_timeout(config_index, 30_000)
+}
+
+/// Connect to a WiFi access point with a custom timeout.
+///
+/// `config_index` is 1-based (matches the PSP's Network Settings list).
+/// `timeout_ms` is the maximum time to wait in milliseconds.
+pub fn connect_ap_timeout(config_index: i32, timeout_ms: u32) -> Result<(), NetError> {
     let ret = unsafe { sys::sceNetApctlConnect(config_index) };
     if ret < 0 {
         return Err(NetError(ret));
     }
 
-    // Poll until we get an IP or hit an error
-    loop {
+    // Poll until we get an IP, hit an error, or time out.
+    let max_iterations = timeout_ms / 50;
+    for _ in 0..max_iterations {
         let mut state = sys::ApctlState::Disconnected;
         let ret = unsafe { sys::sceNetApctlGetState(&mut state) };
         if ret < 0 {
@@ -133,6 +143,10 @@ pub fn connect_ap(config_index: i32) -> Result<(), NetError> {
         }
         crate::thread::sleep_ms(50);
     }
+
+    // Timed out — disconnect and return error.
+    let _ = unsafe { sys::sceNetApctlDisconnect() };
+    Err(NetError(-1))
 }
 
 /// Disconnect from the current access point.

@@ -117,6 +117,12 @@ impl Controller {
     }
 }
 
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Normalize a raw 0..=255 axis value to -1.0..=1.0 with deadzone.
 fn normalize_axis(raw: u8, deadzone: f32) -> f32 {
     // Map 0..255 to -1.0..1.0 (128 is center)

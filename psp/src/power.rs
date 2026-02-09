@@ -147,13 +147,20 @@ pub fn on_power_event(
         )
     };
     if thid.0 < 0 {
-        unsafe { crate::sys::scePowerUnregisterCallback(slot) };
+        unsafe {
+            crate::sys::scePowerUnregisterCallback(slot);
+            crate::sys::sceKernelDeleteCallback(cbid);
+        }
         return Err(PowerError(thid.0));
     }
 
     let ret = unsafe { crate::sys::sceKernelStartThread(thid, 0, core::ptr::null_mut()) };
     if ret < 0 {
-        unsafe { crate::sys::scePowerUnregisterCallback(slot) };
+        unsafe {
+            crate::sys::scePowerUnregisterCallback(slot);
+            crate::sys::sceKernelDeleteThread(thid);
+            crate::sys::sceKernelDeleteCallback(cbid);
+        }
         return Err(PowerError(ret));
     }
 

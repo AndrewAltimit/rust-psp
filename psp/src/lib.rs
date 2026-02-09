@@ -54,6 +54,8 @@ mod eabi;
 pub mod font;
 pub mod framebuffer;
 pub mod gu_ext;
+#[cfg(not(feature = "stub-only"))]
+pub mod http;
 #[cfg(feature = "kernel")]
 pub mod hw;
 #[cfg(not(feature = "stub-only"))]
@@ -65,11 +67,19 @@ pub mod math;
 pub mod me;
 pub mod mem;
 #[cfg(not(feature = "stub-only"))]
+pub mod mp3;
+#[cfg(not(feature = "stub-only"))]
 pub mod net;
+#[cfg(not(feature = "stub-only"))]
+pub mod osk;
 pub mod power;
+pub mod rtc;
+#[cfg(not(feature = "stub-only"))]
+pub mod savedata;
 pub mod simd;
 pub mod sync;
 pub mod sys;
+pub mod system_param;
 #[cfg(not(feature = "stub-only"))]
 pub mod test_runner;
 #[cfg(not(feature = "stub-only"))]
@@ -349,6 +359,7 @@ macro_rules! __module_impl {
 /// This API does not have destructor support yet. You can manually set up an
 /// exit callback if you need more control -- see the source code of this
 /// function.
+#[deprecated(note = "Use psp::callback::setup_exit_callback() instead")]
 pub fn enable_home_button() {
     use core::{ffi::c_void, ptr};
     use sys::ThreadAttributes;

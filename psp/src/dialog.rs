@@ -73,6 +73,9 @@ fn make_message_buf(message: &str) -> [u8; 512] {
     msg
 }
 
+/// Maximum iterations for dialog polling (~10 seconds at 60 fps).
+const MAX_DIALOG_ITERATIONS: u32 = 600;
+
 fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, DialogError> {
     let ret =
         unsafe { crate::sys::sceUtilityMsgDialogInitStart(params as *mut UtilityMsgDialogParams) };
@@ -80,7 +83,7 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
         return Err(DialogError(ret));
     }
 
-    loop {
+    for _ in 0..MAX_DIALOG_ITERATIONS {
         let status = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
         match status {
             2 => unsafe { crate::sys::sceUtilityMsgDialogUpdate(1) },

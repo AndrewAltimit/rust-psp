@@ -167,13 +167,18 @@ impl SpriteBatch {
     /// Must be called within an active GU display list with an appropriate
     /// texture bound (for textured sprites).
     pub unsafe fn flush(&mut self) {
-        use crate::sys::{GuPrimitive, sceGuDrawArray};
+        use crate::sys::{GuPrimitive, sceGuDrawArray, sceKernelDcacheWritebackRange};
         use core::ffi::c_void;
 
         if self.vertices.is_empty() {
             return;
         }
         unsafe {
+            // Flush the CPU data cache so the GE can see the vertex data.
+            sceKernelDcacheWritebackRange(
+                self.vertices.as_ptr() as *const c_void,
+                (self.vertices.len() * core::mem::size_of::<SpriteVertex>()) as u32,
+            );
             sceGuDrawArray(
                 GuPrimitive::Sprites,
                 SPRITE_VERTEX_TYPE,

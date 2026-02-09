@@ -205,6 +205,10 @@ impl Config {
     }
 
     fn serialize(&self) -> Result<Vec<u8>, ConfigError> {
+        if self.entries.len() > u16::MAX as usize {
+            return Err(ConfigError::TooLarge);
+        }
+
         let mut buf = Vec::new();
         buf.extend_from_slice(MAGIC);
         buf.extend_from_slice(&VERSION.to_le_bytes());
@@ -241,11 +245,17 @@ impl Config {
                 },
                 ConfigValue::Str(v) => {
                     let bytes = v.as_bytes();
+                    if bytes.len() > u16::MAX as usize {
+                        return Err(ConfigError::TooLarge);
+                    }
                     buf.push(TYPE_STR);
                     buf.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
                     buf.extend_from_slice(bytes);
                 },
                 ConfigValue::Bytes(v) => {
+                    if v.len() > u16::MAX as usize {
+                        return Err(ConfigError::TooLarge);
+                    }
                     buf.push(TYPE_BYTES);
                     buf.extend_from_slice(&(v.len() as u16).to_le_bytes());
                     buf.extend_from_slice(v);

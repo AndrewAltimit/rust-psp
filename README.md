@@ -53,7 +53,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 
 ### Platform SDK
 
-30+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
+36+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
 
 #### System & Lifecycle
 
@@ -65,6 +65,8 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `psp::time` | `Instant`, `Duration`, `FrameTimer` | Microsecond timing, frame rate measurement |
 | `psp::timer` | `Alarm`, `VTimer` | One-shot alarms (closure-based), virtual timers |
 | `psp::dialog` | `message_dialog()`, `confirm_dialog()` | System message/confirmation/error dialogs |
+| `psp::system_param` | `language()`, `nickname()`, `timezone_offset()` | System parameter queries (language, date/time format, etc.) |
+| `psp::rtc` | `Tick`, `format_rfc3339()`, `day_of_week()` | Extended RTC: tick arithmetic, RFC 3339, UTC/local conversion |
 
 #### Threading & Sync
 
@@ -78,6 +80,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | Module | Key API | Description |
 |--------|---------|-------------|
 | `psp::input` | `Controller`, `analog_x_f32()`, `is_pressed()` | Button press/release detection, analog deadzone normalization |
+| `psp::osk` | `text_input()`, `OskBuilder` | On-screen keyboard for user text input (UTF-16 handling) |
 
 #### File I/O & Config
 
@@ -85,6 +88,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 |--------|---------|-------------|
 | `psp::io` | `File`, `ReadDir`, `read_to_vec()`, `write_bytes()` | RAII file handles, directory iteration, convenience I/O |
 | `psp::config` | `Config`, `save()`, `load()` | Key-value store with binary RCFG format (bool/i32/f32/str) |
+| `psp::savedata` | `Savedata`, `save()`, `load()` | PSP system save/load dialog with auto-save/auto-load modes |
 
 #### Audio
 
@@ -92,6 +96,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 |--------|---------|-------------|
 | `psp::audio` | `AudioChannel`, `output_blocking()` | RAII audio channels with PCM output |
 | `psp::audio_mixer` | `Mixer`, `Channel` | Multi-channel PCM software mixer |
+| `psp::mp3` | `Mp3Decoder`, `decode_frame()` | Hardware-accelerated MP3 decoding to PCM samples |
 
 #### Graphics & Rendering
 
@@ -108,6 +113,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | Module | Key API | Description |
 |--------|---------|-------------|
 | `psp::net` | `TcpStream`, `UdpSocket`, `connect_ap()` | WiFi connect, TCP/UDP sockets (RAII), DNS resolution |
+| `psp::http` | `HttpClient`, `get()`, `post()`, `RequestBuilder` | HTTP client with RAII template/connection/request lifecycle |
 | `psp::wlan` | `status()`, `is_available()` | WLAN module status query |
 
 #### Hardware & Memory

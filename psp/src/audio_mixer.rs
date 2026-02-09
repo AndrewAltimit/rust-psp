@@ -32,7 +32,7 @@
 //! ```
 
 use crate::sync::SpinMutex;
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 /// Maximum number of mixer channels.
 pub const MAX_CHANNELS: usize = 8;
@@ -120,8 +120,6 @@ pub struct Mixer {
     sample_count: i32,
     /// Hardware channel ID from sceAudioChReserve.
     hw_channel: AtomicI32,
-    /// Whether the mixer output thread is running.
-    running: AtomicBool,
     /// Master volume (0..=0x8000).
     master_volume: AtomicU32,
 }
@@ -156,7 +154,6 @@ impl Mixer {
             channels: SpinMutex::new([const { Channel::new() }; MAX_CHANNELS]),
             sample_count,
             hw_channel: AtomicI32::new(-1),
-            running: AtomicBool::new(false),
             master_volume: AtomicU32::new(0x8000),
         })
     }
@@ -332,10 +329,12 @@ impl Mixer {
                 // src ~ 32000 and vol = 0x8000.
                 let mixed_l = (src_l as i64 * vol_l as i64 / 0x8000 * fade as i64 / 256
                     * master_vol as i64
-                    / 0x8000) as i16;
+                    / 0x8000)
+                    .clamp(i16::MIN as i64, i16::MAX as i64) as i16;
                 let mixed_r = (src_r as i64 * vol_r as i64 / 0x8000 * fade as i64 / 256
                     * master_vol as i64
-                    / 0x8000) as i16;
+                    / 0x8000)
+                    .clamp(i16::MIN as i64, i16::MAX as i64) as i16;
 
                 // Saturating add to output
                 let out_idx = i * 2;
@@ -423,16 +422,10 @@ impl Mixer {
     pub fn sample_count(&self) -> i32 {
         self.sample_count
     }
-
-    /// Check if the mixer output thread is running.
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Relaxed)
-    }
 }
 
 impl Drop for Mixer {
     fn drop(&mut self) {
-        self.running.store(false, Ordering::Release);
         self.release_hw_channel();
     }
 }

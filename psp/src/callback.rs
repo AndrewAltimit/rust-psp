@@ -54,7 +54,9 @@ pub fn setup_exit_callback() -> Result<(), CallbackError> {
         let cbid = unsafe {
             sceKernelCreateCallback(b"exit_callback\0".as_ptr(), exit_callback, ptr::null_mut())
         };
-        unsafe { sceKernelRegisterExitCallback(cbid) };
+        if cbid.0 >= 0 {
+            unsafe { sceKernelRegisterExitCallback(cbid) };
+        }
         unsafe { crate::sys::sceKernelSleepThreadCB() };
         0
     }

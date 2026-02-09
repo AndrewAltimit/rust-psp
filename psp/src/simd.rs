@@ -115,7 +115,7 @@ pub fn vec4_dot(a: &Vec4, b: &Vec4) -> f32 {
 
 /// Normalize a Vec4 (make unit length).
 ///
-/// Returns the zero vector if the input has zero length.
+/// Behavior is undefined for zero-length vectors (may return NaN or infinity).
 pub fn vec4_normalize(v: &Vec4) -> Vec4 {
     let mut out = Vec4::ZERO;
     let v_ptr = v.0.as_ptr();
@@ -583,7 +583,13 @@ pub fn clampf(val: f32, min: f32, max: f32) -> f32 {
 }
 
 /// Remap a value from one range to another.
+///
+/// Returns `out_min` when `in_max == in_min` (degenerate input range).
 pub fn remapf(val: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {
-    let t = (val - in_min) / (in_max - in_min);
+    let range = in_max - in_min;
+    if range == 0.0 {
+        return out_min;
+    }
+    let t = (val - in_min) / range;
     out_min + t * (out_max - out_min)
 }

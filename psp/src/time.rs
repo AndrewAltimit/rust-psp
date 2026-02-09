@@ -120,14 +120,10 @@ impl Instant {
 
     fn duration_to(self, later: Instant) -> Duration {
         let ticks = later.tick.saturating_sub(self.tick);
-        let resolution = unsafe { crate::sys::sceRtcGetTickResolution() } as u64;
-        if resolution == 0 {
-            return Duration::ZERO;
-        }
-        // Convert ticks to microseconds:  ticks * 1_000_000 / resolution
-        // PSP resolution is typically 1_000_000 (1 MHz), so this is usually
-        // a no-op, but we handle other values correctly.
-        let micros = ticks * 1_000_000 / resolution;
+        // The PSP tick resolution is always 1,000,000 (1 MHz).
+        // Use a constant to avoid a syscall on every timing measurement.
+        const TICK_RESOLUTION: u64 = 1_000_000;
+        let micros = ticks * 1_000_000 / TICK_RESOLUTION;
         Duration::from_micros(micros)
     }
 }
@@ -141,6 +137,16 @@ pub struct DateTime {
 }
 
 impl DateTime {
+    /// Create a DateTime from a raw `ScePspDateTime`.
+    pub fn from_raw(raw: crate::sys::ScePspDateTime) -> Self {
+        Self { inner: raw }
+    }
+
+    /// Get a reference to the underlying `ScePspDateTime`.
+    pub fn as_raw(&self) -> &crate::sys::ScePspDateTime {
+        &self.inner
+    }
+
     /// Get the current local date and time.
     pub fn now() -> Result<Self, TimeError> {
         let mut dt = crate::sys::ScePspDateTime::default();
@@ -229,5 +235,11 @@ impl FrameTimer {
     /// The delta time from the most recent `tick()` call, in seconds.
     pub fn last_delta(&self) -> f32 {
         self.delta
+    }
+}
+
+impl Default for FrameTimer {
+    fn default() -> Self {
+        Self::new()
     }
 }

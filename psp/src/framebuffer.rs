@@ -271,6 +271,12 @@ impl DirtyRect {
     }
 }
 
+impl Default for DirtyRect {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ── LayerCompositor ─────────────────────────────────────────────────
 
 /// Layer index for the compositor.

@@ -79,6 +79,10 @@ impl Partition for MePartition {
 pub struct PartitionAlloc<P: Partition, T> {
     ptr: *mut T,
     block_id: SceUid,
+    /// Whether the value at `ptr` has been initialized and needs dropping.
+    /// Set to `false` for `new_uninit()` allocations to prevent UB from
+    /// calling `drop_in_place` on uninitialized memory.
+    initialized: bool,
     _partition: PhantomData<P>,
 }
 
@@ -125,6 +129,7 @@ impl<P: Partition, T> PartitionAlloc<P, T> {
         Ok(Self {
             ptr,
             block_id,
+            initialized: true,
             _partition: PhantomData,
         })
     }
@@ -154,8 +159,21 @@ impl<P: Partition, T> PartitionAlloc<P, T> {
         Ok(Self {
             ptr,
             block_id,
+            initialized: false,
             _partition: PhantomData,
         })
+    }
+
+    /// Mark the allocation as initialized.
+    ///
+    /// After calling this, `Drop` will call `drop_in_place` on the value.
+    /// Call this after writing a valid `T` into the allocation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have written a valid, initialized `T` to the pointer.
+    pub unsafe fn assume_init(&mut self) {
+        self.initialized = true;
     }
 
     /// Get a raw pointer to the allocated memory.
@@ -210,8 +228,10 @@ unsafe impl<P: Partition, T: Send> Send for PartitionAlloc<P, T> {}
 impl<P: Partition, T> Drop for PartitionAlloc<P, T> {
     fn drop(&mut self) {
         unsafe {
-            // Drop the value in place before freeing memory
-            core::ptr::drop_in_place(self.ptr);
+            // Only drop the value if it was initialized (prevents UB for new_uninit).
+            if self.initialized {
+                core::ptr::drop_in_place(self.ptr);
+            }
             sceKernelFreePartitionMemory(self.block_id);
         }
     }

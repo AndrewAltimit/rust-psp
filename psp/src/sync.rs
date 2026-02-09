@@ -390,6 +390,13 @@ impl<T, const N: usize> SpscQueue<T, N> {
     }
 }
 
+impl<T, const N: usize> Drop for SpscQueue<T, N> {
+    fn drop(&mut self) {
+        // Drop all remaining items in the queue.
+        while self.pop().is_some() {}
+    }
+}
+
 // ── UncachedBox ─────────────────────────────────────────────────────
 
 /// A heap-allocated box in uncached (partition 3) memory, suitable for
@@ -483,8 +490,9 @@ impl<T> UncachedBox<T> {
 #[cfg(feature = "kernel")]
 impl<T> Drop for UncachedBox<T> {
     fn drop(&mut self) {
-        // SAFETY: We own this allocation and block_id is valid.
         unsafe {
+            // Drop the inner value before freeing the memory.
+            core::ptr::drop_in_place(self.ptr);
             crate::sys::sceKernelFreePartitionMemory(self.block_id);
         }
     }
@@ -557,6 +565,7 @@ impl Semaphore {
     /// - `init_count`: initial semaphore count
     /// - `max_count`: maximum semaphore count
     pub fn new(name: &[u8], init_count: i32, max_count: i32) -> Result<Self, SyncError> {
+        debug_assert!(name.last() == Some(&0), "name must be null-terminated");
         let id = unsafe {
             crate::sys::sceKernelCreateSema(
                 name.as_ptr(),
@@ -652,6 +661,7 @@ impl EventFlag {
         attr: crate::sys::EventFlagAttributes,
         init_pattern: u32,
     ) -> Result<Self, SyncError> {
+        debug_assert!(name.last() == Some(&0), "name must be null-terminated");
         let id = unsafe {
             crate::sys::sceKernelCreateEventFlag(
                 name.as_ptr(),

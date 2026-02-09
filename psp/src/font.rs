@@ -380,19 +380,20 @@ impl GlyphAtlas {
             }
         }
 
-        // Still no room — evict the LRU row.
+        // Still no room — evict the LRU row that can fit the glyph height.
         if fit_row.is_none() {
             if let Some((evict_idx, _)) = self
                 .rows
                 .iter()
                 .enumerate()
+                .filter(|(_, r)| r.height >= glyph_h)
                 .min_by_key(|(_, r)| r.lru_stamp)
             {
                 // Remove all cached glyphs in this row.
                 self.cache.retain(|g| g.row_idx != evict_idx);
                 let row = &mut self.rows[evict_idx];
                 row.x_cursor = 0;
-                row.height = glyph_h;
+                // Keep the original row height to avoid overwriting adjacent rows.
                 row.lru_stamp = stamp;
                 fit_row = Some(evict_idx);
             }

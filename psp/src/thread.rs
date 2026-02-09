@@ -20,7 +20,7 @@
 
 use crate::sys::{
     SceUid, ThreadAttributes, sceKernelCreateThread, sceKernelDelayThread, sceKernelDeleteThread,
-    sceKernelGetThreadId, sceKernelSleepThread, sceKernelStartThread,
+    sceKernelGetThreadExitStatus, sceKernelGetThreadId, sceKernelSleepThread, sceKernelStartThread,
     sceKernelTerminateDeleteThread, sceKernelWaitThreadEnd,
 };
 use alloc::boxed::Box;
@@ -227,13 +227,14 @@ impl JoinHandle {
         if ret < 0 {
             return Err(ThreadError(ret));
         }
+        // Retrieve the actual thread exit status.
+        let exit_status = unsafe { sceKernelGetThreadExitStatus(self.thid) };
         self.joined = true;
         let del = unsafe { sceKernelDeleteThread(self.thid) };
         if del < 0 {
             return Err(ThreadError(del));
         }
-        // The exit status is the return value of WaitThreadEnd on success
-        Ok(ret)
+        Ok(exit_status)
     }
 
     /// Get the thread's kernel UID.
@@ -257,8 +258,9 @@ impl Drop for JoinHandle {
 
 /// Sleep the current thread for `ms` milliseconds.
 pub fn sleep_ms(ms: u32) {
+    let us = (ms as u64 * 1000).min(u32::MAX as u64) as u32;
     unsafe {
-        sceKernelDelayThread(ms * 1000);
+        sceKernelDelayThread(us);
     }
 }
 
