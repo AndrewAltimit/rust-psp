@@ -153,6 +153,272 @@ const MINIMUM_RUSTC_VERSION: Version = Version {
     build: BuildMetadata::EMPTY,
 };
 
+/// Generate a custom target JSON from the built-in `mipsel-sony-psp` spec
+/// with `metadata.std` set to `true`. This prevents rustc from setting the
+/// `restricted_std` cfg, allowing third-party crates (serde, toml, etc.) to
+/// use std without `#![feature(restricted_std)]`.
+///
+/// Returns the path to the generated JSON file.
+fn generate_std_target_json() -> Result<std::path::PathBuf> {
+    let dest_dir = env::current_dir()
+        .context("failed to get current dir")?
+        .join("target");
+    fs::create_dir_all(&dest_dir).context("failed to create target dir")?;
+
+    let json_path = dest_dir.join("mipsel-sony-psp-std.json");
+
+    // Get the built-in target spec from rustc.
+    // Respect RUSTC env var for toolchain-aware invocation (e.g. cargo +nightly).
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let output = Command::new(&rustc)
+        .args([
+            "-Z",
+            "unstable-options",
+            "--print",
+            "target-spec-json",
+            "--target",
+            "mipsel-sony-psp",
+        ])
+        .output()
+        .context("failed to run `rustc --print target-spec-json`")?;
+    if !output.status.success() {
+        bail!("`rustc --print target-spec-json` failed");
+    }
+    let spec_str = String::from_utf8(output.stdout).context("target spec JSON is not UTF-8")?;
+
+    // Parse, patch metadata.std to true, and write back.
+    let mut spec: serde_json::Value =
+        serde_json::from_str(&spec_str).context("failed to parse target spec JSON")?;
+    if let Some(metadata) = spec.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        metadata.insert("std".to_string(), serde_json::Value::Bool(true));
+    }
+
+    let patched =
+        serde_json::to_string_pretty(&spec).context("failed to serialize patched target spec")?;
+    fs::write(&json_path, &patched).context("failed to write custom target JSON")?;
+
+    eprintln!(
+        "[NOTE]: Generated custom target spec with std=true at {}",
+        json_path.display(),
+    );
+    Ok(json_path)
+}
+
+/// Prepare a merged sysroot that overlays PSP PAL files on top of the
+/// standard rust-src component. The merged directory is placed at
+/// `target/psp-std-sysroot/` and reused across builds.
+fn prepare_psp_sysroot() -> Result<()> {
+    use std::path::Path;
+    use std::time::SystemTime;
+
+    // Locate the installed rust-src component.
+    // Respect RUSTC env var for toolchain-aware invocation (e.g. cargo +nightly).
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let sysroot_output = Command::new(&rustc)
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .context("failed to run `rustc --print sysroot`")?;
+    if !sysroot_output.status.success() {
+        bail!("`rustc --print sysroot` failed");
+    }
+    let sysroot =
+        String::from_utf8(sysroot_output.stdout).context("rustc sysroot path is not UTF-8")?;
+    let sysroot = sysroot.trim();
+    let rust_src = Path::new(sysroot).join("lib/rustlib/src/rust");
+
+    if !rust_src.join("library/std").exists() {
+        bail!(
+            "rust-src component not found at {}.\n\
+             Please run: rustup component add rust-src",
+            rust_src.display()
+        );
+    }
+
+    // Locate our PSP overlay source.
+    // Walk up from the current dir to find the repo root containing rust-std-src/.
+    let overlay_src = find_repo_root()?.join("rust-std-src");
+    if !overlay_src.join("library").exists() {
+        bail!(
+            "PSP std overlay not found at {}.\n\
+             Expected rust-std-src/library/ in the repository root.",
+            overlay_src.display()
+        );
+    }
+
+    let dest = env::current_dir()
+        .context("failed to get current dir")?
+        .join("target")
+        .join("psp-std-sysroot");
+
+    // Check if we can skip re-creating the sysroot.
+    let marker = dest.join(".psp-sysroot-stamp");
+    if marker.exists() {
+        // Re-create if any overlay file is newer than the marker.
+        let marker_time = fs::metadata(&marker)
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
+        let overlay_modified = newest_mtime(&overlay_src)?;
+        if overlay_modified <= marker_time {
+            eprintln!("[NOTE]: PSP sysroot is up-to-date, skipping preparation.");
+            return Ok(());
+        }
+    }
+
+    eprintln!("[NOTE]: Preparing PSP std sysroot at {}", dest.display());
+
+    // Clean and recreate.
+    if dest.exists() {
+        fs::remove_dir_all(&dest).context("failed to remove old sysroot")?;
+    }
+    fs::create_dir_all(&dest).context("failed to create sysroot dir")?;
+
+    // Copy the base rust-src files we need.
+    copy_dir_recursive(&rust_src.join("library"), &dest.join("library"))?;
+
+    // Copy the src directory if it exists (some toolchains include it).
+    let src_dir = rust_src.join("src");
+    if src_dir.exists() {
+        copy_dir_recursive(&src_dir, &dest.join("src"))?;
+    }
+
+    // Overlay our PSP-specific files on top.
+    copy_dir_recursive(&overlay_src.join("library"), &dest.join("library"))?;
+
+    // Patch std's lib.rs to make it unconditionally stable.
+    //
+    // Cargo's -Zbuild-std ALWAYS passes `--cfg restricted_std` for custom
+    // targets, which makes std an unstable library that requires
+    // `#![feature(restricted_std)]` in every downstream crate (including
+    // third-party crates like serde). The `metadata.std` field in the target
+    // JSON is informational only -- cargo ignores it.
+    //
+    // We patch the two conditional stability attributes:
+    //   #![cfg_attr(not(restricted_std), stable(...))]   -> #![stable(...)]
+    //   #![cfg_attr(restricted_std, unstable(...))]       -> removed
+    patch_std_stability(&dest.join("library/std/src/lib.rs"))?;
+
+    // Write a timestamp marker.
+    fs::write(&marker, "").context("failed to write sysroot stamp")?;
+
+    eprintln!("[NOTE]: PSP std sysroot prepared successfully.");
+    Ok(())
+}
+
+/// Patch `library/std/src/lib.rs` so std is unconditionally stable.
+///
+/// Cargo's `-Zbuild-std` passes `--cfg restricted_std` for every custom
+/// target.  That cfg selects the `unstable(feature = "restricted_std")`
+/// stability attribute, which forces every downstream crate to carry
+/// `#![feature(restricted_std)]` -- including third-party crates.
+///
+/// This function rewrites the two conditional attributes:
+///   `#![cfg_attr(not(restricted_std), stable(...))]`  ->  `#![stable(...)]`
+///   `#![cfg_attr(restricted_std, unstable(...))]`     ->  disabled
+fn patch_std_stability(lib_rs: &std::path::Path) -> Result<()> {
+    let content = fs::read_to_string(lib_rs)
+        .with_context(|| format!("failed to read {}", lib_rs.display()))?;
+
+    // Replace the conditional stable attribute with an unconditional one.
+    let patched = content.replace(
+        "#![cfg_attr(not(restricted_std), stable(feature = \"rust1\", since = \"1.0.0\"))]",
+        "#![stable(feature = \"rust1\", since = \"1.0.0\")]",
+    );
+
+    // Disable the restricted_std unstable attribute by changing the condition
+    // to `any()` (always false), so it never applies even with --cfg restricted_std.
+    let patched = patched.replace(
+        "cfg_attr(\n    restricted_std,\n    unstable(\n        feature = \"restricted_std\",",
+        "cfg_attr(\n    any(), /* patched: PSP std is stable */\n    unstable(\n        feature = \"restricted_std\",",
+    );
+
+    if patched == content {
+        eprintln!(
+            "[WARN]: Could not find restricted_std attributes to patch in {}",
+            lib_rs.display()
+        );
+    } else {
+        fs::write(lib_rs, &patched)
+            .with_context(|| format!("failed to write patched {}", lib_rs.display()))?;
+        eprintln!("[NOTE]: Patched std stability attributes (removed restricted_std gate).");
+    }
+
+    Ok(())
+}
+
+/// Find the repository root by walking up from the current directory,
+/// looking for a directory containing `rust-std-src/`.
+fn find_repo_root() -> Result<std::path::PathBuf> {
+    let mut dir = env::current_dir().context("failed to get current dir")?;
+    loop {
+        if dir.join("rust-std-src").exists() {
+            return Ok(dir);
+        }
+        if !dir.pop() {
+            bail!(
+                "could not find repository root (looking for rust-std-src/ directory).\n\
+                 Make sure you're building from within the rust-psp repository."
+            );
+        }
+    }
+}
+
+/// Recursively copy a directory. If files exist at the destination, they are
+/// overwritten (this is used for the overlay step).
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)
+            .with_context(|| format!("failed to create dir {}", dst.display()))?;
+    }
+    for entry in
+        fs::read_dir(src).with_context(|| format!("failed to read dir {}", src.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).with_context(|| {
+                format!(
+                    "failed to copy {} -> {}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Get the newest modification time of any file under a directory.
+fn newest_mtime(dir: &std::path::Path) -> Result<std::time::SystemTime> {
+    let mut newest = std::time::SystemTime::UNIX_EPOCH;
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("failed to read dir {}", dir.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+
+        if file_type.is_dir() {
+            let sub = newest_mtime(&path)?;
+            if sub > newest {
+                newest = sub;
+            }
+        } else if let Ok(meta) = fs::metadata(&path)
+            && let Ok(mtime) = meta.modified()
+            && mtime > newest
+        {
+            newest = mtime;
+        }
+    }
+    Ok(newest)
+}
+
 fn main() -> Result<()> {
     let rustc_version = rustc_version::version_meta().context("failed to query rustc version")?;
 
@@ -203,26 +469,50 @@ fn main() -> Result<()> {
     // Skip `cargo psp`
     let args = env::args().skip(2);
 
-    let build_std_flag = match env::var("RUST_PSP_BUILD_STD") {
-        Ok(_) => {
-            eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, using \"build-std\".");
-            "build-std"
-        },
-        Err(_) => "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort",
+    let build_std = env::var("RUST_PSP_BUILD_STD").is_ok();
+    let build_std_flag = if build_std {
+        eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, building std for PSP.");
+        "build-std=std,core,alloc,panic_unwind,panic_abort"
+    } else {
+        "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort"
+    };
+
+    // When building full std, prepare a merged sysroot that overlays PSP PAL
+    // files and generate a custom target JSON with metadata.std = true so that
+    // rustc does not apply the restricted_std stability gate to downstream crates.
+    let target_arg: std::ffi::OsString = if build_std {
+        prepare_psp_sysroot().context("failed to prepare PSP std sysroot")?;
+        let json_path =
+            generate_std_target_json().context("failed to generate custom target JSON")?;
+        json_path.into_os_string()
+    } else {
+        "mipsel-sony-psp".into()
     };
 
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut build_process = Command::new(&cargo)
+    let mut build_cmd = Command::new(&cargo);
+    build_cmd
         .arg("build")
         .arg("-Z")
         .arg(build_std_flag)
         .arg("--target")
-        .arg("mipsel-sony-psp")
+        .arg(&target_arg)
         .arg("--message-format=json-render-diagnostics")
         .args(args)
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("failed to spawn `cargo build`")?;
+        .stdout(Stdio::piped());
+
+    if build_std {
+        // __CARGO_TESTS_ONLY_SRC_ROOT must point to the workspace root
+        // containing Cargo.toml (i.e. the library/ directory).
+        let sysroot_dir = env::current_dir()
+            .context("failed to get current dir")?
+            .join("target")
+            .join("psp-std-sysroot")
+            .join("library");
+        build_cmd.env("__CARGO_TESTS_ONLY_SRC_ROOT", &sysroot_dir);
+    }
+
+    let mut build_process = build_cmd.spawn().context("failed to spawn `cargo build`")?;
 
     let lone = {
         let output = Command::new(cargo)

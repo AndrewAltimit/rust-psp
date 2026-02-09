@@ -1,6 +1,9 @@
+#![feature(restricted_std)]
+#![no_main]
+
 psp::module!("rust_std_hello_world", 1, 1);
 
-fn main() {
+fn psp_main() {
     psp::enable_home_button();
 
     let yeet = String::from("Yeeteth! I am inside a String!");

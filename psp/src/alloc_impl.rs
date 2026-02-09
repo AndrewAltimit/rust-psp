@@ -6,11 +6,23 @@ use crate::sys::{self, SceSysMemBlockTypes, SceSysMemPartitionId, SceUid};
 use alloc::alloc::{GlobalAlloc, Layout};
 use core::{mem, ptr};
 
+/// Maximum supported alignment (must be a power of 2).
+///
+/// We store the alignment padding offset in a single `u8`. For an alignment of
+/// 128, the worst-case padding is `1 + 127 = 128`, which is the largest value
+/// that fits in `u8`. An alignment of 256 would require up to 256 bytes of
+/// padding, overflowing the `u8` storage.
+const MAX_ALIGN: usize = 128;
+
 /// An allocator that hooks directly into the PSP OS memory allocator.
 struct SystemAlloc;
 
 unsafe impl GlobalAlloc for SystemAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.align() > MAX_ALIGN {
+            return ptr::null_mut();
+        }
+
         let Some(size) = layout
             .size()
             // We need to store the memory block ID.
