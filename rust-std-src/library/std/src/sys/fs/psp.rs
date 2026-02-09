@@ -162,15 +162,18 @@ fn psp_datetime_to_system_time(dt: &PspDateTime) -> SystemTime {
 }
 
 /// Convert a Path to a null-terminated byte buffer.
-fn path_to_cstr(path: &Path) -> io::Result<[u8; 256]> {
+///
+/// Uses a 1024-byte buffer to accommodate longer paths such as `host0:/`
+/// paths in PPSSPP or deeply nested memstick paths.
+fn path_to_cstr(path: &Path) -> io::Result<[u8; 1024]> {
     let s = path
         .to_str()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path contains invalid UTF-8"))?;
     let bytes = s.as_bytes();
-    if bytes.len() >= 256 {
+    if bytes.len() >= 1024 {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "path too long"));
     }
-    let mut buf = [0u8; 256];
+    let mut buf = [0u8; 1024];
     buf[..bytes.len()].copy_from_slice(bytes);
     Ok(buf)
 }

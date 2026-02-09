@@ -97,6 +97,7 @@ dependencies = [
  "scroll",
  "serde",
  "serde_derive",
+ "serde_json",
  "toml",
 ]
 

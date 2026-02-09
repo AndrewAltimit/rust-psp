@@ -153,6 +153,56 @@ const MINIMUM_RUSTC_VERSION: Version = Version {
     build: BuildMetadata::EMPTY,
 };
 
+/// Generate a custom target JSON from the built-in `mipsel-sony-psp` spec
+/// with `metadata.std` set to `true`. This prevents rustc from setting the
+/// `restricted_std` cfg, allowing third-party crates (serde, toml, etc.) to
+/// use std without `#![feature(restricted_std)]`.
+///
+/// Returns the path to the generated JSON file.
+fn generate_std_target_json() -> Result<std::path::PathBuf> {
+    let dest_dir = env::current_dir()
+        .context("failed to get current dir")?
+        .join("target");
+    fs::create_dir_all(&dest_dir).context("failed to create target dir")?;
+
+    let json_path = dest_dir.join("mipsel-sony-psp-std.json");
+
+    // Get the built-in target spec from rustc.
+    // Respect RUSTC env var for toolchain-aware invocation (e.g. cargo +nightly).
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let output = Command::new(&rustc)
+        .args([
+            "-Z", "unstable-options",
+            "--print", "target-spec-json",
+            "--target", "mipsel-sony-psp",
+        ])
+        .output()
+        .context("failed to run `rustc --print target-spec-json`")?;
+    if !output.status.success() {
+        bail!("`rustc --print target-spec-json` failed");
+    }
+    let spec_str = String::from_utf8(output.stdout)
+        .context("target spec JSON is not UTF-8")?;
+
+    // Parse, patch metadata.std to true, and write back.
+    let mut spec: serde_json::Value = serde_json::from_str(&spec_str)
+        .context("failed to parse target spec JSON")?;
+    if let Some(metadata) = spec.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        metadata.insert("std".to_string(), serde_json::Value::Bool(true));
+    }
+
+    let patched = serde_json::to_string_pretty(&spec)
+        .context("failed to serialize patched target spec")?;
+    fs::write(&json_path, &patched)
+        .context("failed to write custom target JSON")?;
+
+    eprintln!(
+        "[NOTE]: Generated custom target spec with std=true at {}",
+        json_path.display(),
+    );
+    Ok(json_path)
+}
+
 /// Prepare a merged sysroot that overlays PSP PAL files on top of the
 /// standard rust-src component. The merged directory is placed at
 /// `target/psp-std-sysroot/` and reused across builds.
@@ -161,7 +211,9 @@ fn prepare_psp_sysroot() -> Result<()> {
     use std::time::SystemTime;
 
     // Locate the installed rust-src component.
-    let sysroot_output = Command::new("rustc")
+    // Respect RUSTC env var for toolchain-aware invocation (e.g. cargo +nightly).
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let sysroot_output = Command::new(&rustc)
         .arg("--print")
         .arg("sysroot")
         .output()
@@ -370,10 +422,17 @@ fn main() -> Result<()> {
         "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort"
     };
 
-    // When building full std, prepare a merged sysroot that overlays PSP PAL files.
-    if build_std {
+    // When building full std, prepare a merged sysroot that overlays PSP PAL
+    // files and generate a custom target JSON with metadata.std = true so that
+    // rustc does not apply the restricted_std stability gate to downstream crates.
+    let target_arg: std::ffi::OsString = if build_std {
         prepare_psp_sysroot().context("failed to prepare PSP std sysroot")?;
-    }
+        let json_path = generate_std_target_json()
+            .context("failed to generate custom target JSON")?;
+        json_path.into_os_string()
+    } else {
+        "mipsel-sony-psp".into()
+    };
 
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut build_cmd = Command::new(&cargo);
@@ -382,7 +441,7 @@ fn main() -> Result<()> {
         .arg("-Z")
         .arg(build_std_flag)
         .arg("--target")
-        .arg("mipsel-sony-psp")
+        .arg(&target_arg)
         .arg("--message-format=json-render-diagnostics")
         .args(args)
         .stdout(Stdio::piped());
