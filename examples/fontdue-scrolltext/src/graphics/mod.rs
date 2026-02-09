@@ -29,18 +29,17 @@ pub fn setup(allocator: &mut psp::vram_alloc::SimpleVramAllocator) {
     unsafe {
         let fbp0 = allocator
             .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
+            .unwrap()
             .as_mut_ptr_from_zero();
         let fbp1 = allocator
             .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
+            .unwrap()
             .as_mut_ptr_from_zero();
 
         sys::sceGumLoadIdentity();
         sys::sceGuInit();
 
-        sys::sceGuStart(
-            GuContextType::Direct,
-            &mut LIST.0 as *mut [u32; 0x40000] as *mut _,
-        );
+        sys::sceGuStart(GuContextType::Direct, &raw mut LIST.0 as *mut _);
         sys::sceGuDrawBuffer(DisplayPixelFormat::Psm8888, fbp0 as _, BUF_WIDTH as i32);
         sys::sceGuDispBuffer(
             SCREEN_WIDTH as i32,
@@ -88,10 +87,7 @@ pub fn setup(allocator: &mut psp::vram_alloc::SimpleVramAllocator) {
 /// - `color`: The colour to clear with, in big-endian ABGR, little endian RGBA.
 pub fn clear_color(color: u32) {
     unsafe {
-        sys::sceGuStart(
-            GuContextType::Direct,
-            &mut LIST.0 as *mut [u32; 0x40000] as *mut _,
-        );
+        sys::sceGuStart(GuContextType::Direct, &raw mut LIST.0 as *mut _);
         sys::sceGuClearColor(color);
         sys::sceGuClear(ClearBuffer::COLOR_BUFFER_BIT | ClearBuffer::FAST_CLEAR_BIT);
         sys::sceGuFinish();
@@ -122,7 +118,7 @@ pub fn draw_vertices(
     scale_y: f32,
 ) {
     unsafe {
-        sys::sceGuStart(GuContextType::Direct, LIST.0.as_mut_ptr() as *mut _);
+        sys::sceGuStart(GuContextType::Direct, &raw mut LIST.0 as *mut _);
 
         sys::sceGumMatrixMode(MatrixMode::Model);
         sys::sceGumLoadIdentity();

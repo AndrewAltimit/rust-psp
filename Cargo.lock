@@ -509,6 +509,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-audio-tone-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-clock-speed-example"
 version = "0.1.0"
 dependencies = [
@@ -529,6 +536,13 @@ dependencies = [
  "embedded-graphics 0.8.1",
  "psp",
  "tinybmp",
+]
+
+[[package]]
+name = "psp-file-io-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]
@@ -583,6 +597,13 @@ dependencies = [
  "mousefood",
  "psp",
  "ratatui",
+]
+
+[[package]]
+name = "psp-screenshot-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
 ]
 
 [[package]]

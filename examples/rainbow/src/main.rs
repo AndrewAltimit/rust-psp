@@ -18,10 +18,11 @@ fn psp_main() {
         );
 
         // Cache-through address
-        VRAM = (0x4000_0000u32 | sys::sceGeEdramGetAddr() as u32) as *mut u32;
+        let vram = (0x4000_0000u32 | sys::sceGeEdramGetAddr() as u32) as *mut u32;
+        *&raw mut VRAM = vram;
 
         sys::sceDisplaySetFrameBuf(
-            VRAM as *const u8,
+            vram as *const u8,
             BUF_WIDTH as usize,
             sys::DisplayPixelFormat::Psm8888,
             sys::DisplaySetBufSync::NextFrame,
@@ -33,7 +34,7 @@ fn psp_main() {
                 let color = wheel(pos);
 
                 for i in 0..(BUF_WIDTH * SCREEN_HEIGHT) {
-                    *VRAM.add(i as usize) = color;
+                    *vram.add(i as usize) = color;
                 }
             }
         }

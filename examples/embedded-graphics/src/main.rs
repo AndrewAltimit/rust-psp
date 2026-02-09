@@ -2,7 +2,7 @@
 #![no_main]
 
 use embedded_graphics::image::Image;
-use embedded_graphics::mono_font::{ascii::FONT_6X12, MonoTextStyle};
+use embedded_graphics::mono_font::{MonoTextStyle, ascii::FONT_6X12};
 use embedded_graphics::pixelcolor::Rgb888;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::*;

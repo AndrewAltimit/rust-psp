@@ -18,71 +18,86 @@ fn psp_main() {
 }
 ```
 
-See `examples/` directory for sample programs.
+## API Overview
 
-## What's Different from Upstream
+The `psp` crate provides ~825 syscall bindings covering every major PSP subsystem, plus high-level Rust utilities.
 
-### Edition 2024 and Toolchain
+### Syscall Bindings (`psp::sys`)
 
-- Workspace and all crates updated to Rust edition 2024
-- All `#[no_mangle]` and `#[link_section]` attributes updated to `#[unsafe(no_mangle)]` / `#[unsafe(link_section)]` syntax
-- Re-exported `paste::paste` for `$crate::paste!` macro resolution in edition 2024
-- Workspace lints configured (`unsafe_op_in_unsafe_fn = "warn"`, clippy lints)
-- Removed 4 stabilized nightly features (`global_asm`, `const_loop`, `const_if_match`, `panic_info_message`)
+| Domain | Module(s) | Functions | Description |
+|--------|-----------|-----------|-------------|
+| Graphics | `gu`, `ge`, `display` | ~150 | GU/GUM 3D rendering, GPU command queue, display mode/vsync |
+| Input | `ctrl` | 12 | Buttons, D-pad, analog stick |
+| Audio | `audio` | 26 | PCM output/input, channel management, volume |
+| ATRAC3 | `atrac` | 23 | Sony ATRAC3/ATRAC3plus codec |
+| MP3 | `mp3` | 17 | MP3 decoder |
+| MPEG | `mpeg`, `psmf` | 79 | MPEG video, PSMF stream decoding |
+| JPEG | `jpeg` | 5 | JPEG image decoding |
+| File I/O | `io` | 36 | Open/read/write/close, directories, async I/O |
+| Networking | `net` | 150 | Sockets, TCP/UDP, DNS, HTTP, DHCP |
+| WLAN | `wlan` | 5 | Wireless LAN module control |
+| USB | `usb` | 45 | USB device, storage, camera |
+| Power | `power` | 31 | Battery, clock frequency, power callbacks |
+| RTC | `rtc` | 36 | Real-time clock, time conversion |
+| Font | `font` | 28 | Font loading, glyph rendering, metrics |
+| Registry | `registry` | 16 | PSP system registry access |
+| UMD | `umd` | 14 | UMD disc drive control |
+| Utility | `utility` | 43 | Save data, message dialog, OSK, browser |
+| Kernel/Threading | `kernel` | 188 | Threads, semaphores, mutexes, events, callbacks, memory |
+| GE | `ge` | 18 | Graphics Engine low-level command queue |
+| HPRM | `hprm` | 6 | Headphone remote accessory |
+| OpenPSID | `openpsid` | 1 | Console unique ID |
+| **Kernel-only** | `nand` | 12 | NAND flash read/write/status |
+| **Kernel-only** | `sircs` | 1 | Infrared remote control (SIRCS protocol) |
+| **Kernel-only** | `codec` | 10 | Hardware video/audio codec control |
 
-### Safety Fixes
+### High-Level Utilities
 
-- **C runtime intrinsics (CRITICAL):** Reverted `memset`/`memcpy`/`memmove` implementations to manual byte loops. LLVM lowers `core::ptr::write_bytes`/`copy`/`copy_nonoverlapping` back to C memset/memcpy/memmove calls, causing infinite recursion when those functions ARE the implementation. On MIPS this manifests as "jump to invalid address", not a stack overflow.
-- **Use-after-free in test_runner:** Fixed `psp_filename()` returning a pointer to a dropped `String` -- the format buffer now outlives the syscall.
-- **Thread-unsafe panic counter:** Replaced `static mut PANIC_COUNT` with `AtomicUsize` for safe concurrent access.
-- **Allocator overflow checks:** Added `checked_add` for size + alignment calculations in `SystemAlloc::alloc` to prevent integer overflow.
-- **OOM diagnostic:** Added explicit "out of memory" message before spin loop in the allocation error handler.
-- **Global allow scoping:** Removed blanket `#![allow(unsafe_op_in_unsafe_fn)]` from crate root; scoped allows only where needed in `debug.rs`, `sys/mod.rs`, `panic.rs`.
-- **Screenshot BmpHeader:** Replaced `core::mem::transmute` with safe field-by-field LE byte serialization.
-- **libunwind malloc/free shims:** Overflow-safe `malloc` with `checked_add` and validated `Layout`; null-safe `free`; uses `size_of::<usize>()` instead of hardcoded `4` for pointer-width portability.
+| Module | Description |
+|--------|-------------|
+| `psp::vram_alloc` | VRAM bump allocator with `Result` error handling |
+| `psp::embedded_graphics` | `DrawTarget` impl for the `embedded-graphics` crate |
+| `psp::screenshot_bmp()` | Capture framebuffer to BMP |
+| `psp::benchmark()` | Cycle-accurate benchmarking via RTC |
+| `psp::math` | VFPU-accelerated `sinf`/`cosf`, full libm math library |
+| `psp::vfpu!()` | Inline VFPU (Vector FPU) assembly macros |
+| `psp::hw` | Memory-mapped hardware register I/O (kernel mode) |
+| `psp::me` | Media Engine coprocessor boot/task management (kernel mode) |
+| `psp::dprintln!()` | Thread-safe debug printing via `SpinMutex` |
 
-### VRAM Allocator
+## Features
 
-- Changed `alloc()` from panicking to returning `Result<VramMemChunk, VramAllocError>`
-- Added structured error types: `OutOfMemory { requested, available }`, `UnsupportedPixelFormat`, and `Overflow`
-- VRAM base address now uses `sceGeEdramGetAddr()` instead of hardcoded constants
-- Replaced `static mut VRAM_ALLOCATOR` singleton with atomic take pattern (`AtomicBool` guard)
-- Added `checked_add` in `alloc()` and `checked_mul` in `alloc_sized()` to prevent integer overflow
+| Feature | Description |
+|---------|-------------|
+| `kernel` | Kernel mode module support -- enables `module_kernel!()` macro, NAND/SIRCS/codec syscalls, ME coprocessor control, and hardware register access. Requires custom firmware. |
+| `std` | Experimental standard library support -- `String`, `Vec`, `std::fs`, `std::thread`, `std::sync`, `std::time`, `println!()` on real hardware. Build with `RUST_PSP_BUILD_STD=1`. |
+| `embedded-graphics` | Enables the `Framebuffer` display driver for the `embedded-graphics` ecosystem. |
+| `stub-only` | Compile as a stub provider (static library for external projects). |
 
-### Hardware Constants
+## Examples
 
-- Extracted magic numbers into `psp/src/constants.rs`: `SCREEN_WIDTH`, `SCREEN_HEIGHT`, `BUF_WIDTH`, `VRAM_BASE_UNCACHED`, thread priorities, NID values
-- Module macros and `enable_home_button()` use named constants instead of raw numbers
-
-### Thread-Safe Debug Printing
-
-- `dprintln!`/`dprint!` macros now use a `SpinMutex` (atomic spinlock) to protect the character buffer
-- Eliminates `static mut` data race for multi-threaded PSP homebrew
-- Zero overhead on single-core PSP (compiler barrier only, no bus contention)
-
-### Error Handling (cargo-psp)
-
-- All tool binaries (`prxgen`, `pack-pbp`, `mksfo`, `prxmin`, `cargo-psp`) refactored from `unwrap()`/`panic!()` to `Result` with `anyhow` context
-- `fix_imports.rs`: stub position lookup validated with descriptive error for malformed PRX files
-- `build.rs`: replaced unwraps with fallible error handling
-- `cargo-psp` main: cargo message parse errors handled gracefully; title fallback has descriptive error
-- Descriptive error messages with recovery hints
-
-### Features
-
-- `kernel` feature flag added for kernel mode module support (`PSP_MODULE_INFO` flag `0x1000`)
-- `std` support via sysroot overlay and FFI bridge (see [Standard Library Support](#standard-library-support))
-- `libm` dependency added for floating-point math in `no_std`
-
-### Upstream Issues Fixed
-
-| Upstream Issue | Description | Fix |
-|---------------|-------------|-----|
-| [#120](https://github.com/overdrivenpotato/rust-psp/issues/120) | VRAM allocator panics | Result API + atomic singleton + overflow checks |
-| [#126](https://github.com/overdrivenpotato/rust-psp/issues/126) | clippy warnings in cargo-psp | Full anyhow refactor |
-| [#156](https://github.com/overdrivenpotato/rust-psp/issues/156) | Excessive nightly features | 4 stabilized features removed |
-| [#75](https://github.com/overdrivenpotato/rust-psp/issues/75) | memcpy/memset improvements | Idiomatic ptr methods + documented footgun |
-| [#165](https://github.com/overdrivenpotato/rust-psp/issues/165) | Panic/exception support | Hardened malloc/free shims |
+| Example | APIs Demonstrated | Description |
+|---------|-------------------|-------------|
+| `hello-world` | `dprintln!`, `enable_home_button` | Minimal PSP program |
+| `cube` | `sceGu*`, `sceGum*`, VRAM alloc | Rotating 3D cube with lighting |
+| `rainbow` | `sceGu*`, vertex colors | Animated color gradient |
+| `gu-background` | `sceGu*`, VRAM alloc | Clear screen with solid color |
+| `gu-debug-print` | `sceGu*`, debug font | On-screen debug text via GU |
+| `clock-speed` | `scePower*` | Read/set CPU and bus clock speeds |
+| `time` | `sceRtc*` | Read and display real-time clock |
+| `wlan` | `sceWlan*` | Query WLAN module status |
+| `msg-dialog` | `sceUtility*` | System message dialog |
+| `embedded-graphics` | `Framebuffer`, `tinybmp` | Draw BMP images via embedded-graphics |
+| `paint-mode` | `Framebuffer`, `sceCtrl*` | Touch-style paint app with D-pad |
+| `fontdue-scrolltext` | `fontdue`, framebuffer | TrueType font rendering and scrolling |
+| `ratatui` | `ratatui`, `mousefood` | TUI framework on PSP display |
+| `vfpu-addition` | `vfpu!()` macro | VFPU vector addition |
+| `vfpu-context-switching` | `vfpu!()`, threads | VFPU context save/restore across threads |
+| `rust-std-hello-world` | `String`, `Vec`, `std` | Standard library on PSP |
+| `kernel-mode` | `module_kernel!()`, NAND, volatile mem | Kernel-mode APIs (requires CFW) |
+| `file-io` | `sceIoOpen/Write/Read/Close` | File write and read-back |
+| `screenshot` | `screenshot_bmp()`, `sceIoWrite` | Capture framebuffer to BMP file |
+| `audio-tone` | `sceAudioChReserve`, `sceAudioOutputBlocking` | Generate and play a sine wave |
 
 ## Kernel Mode
 
@@ -200,6 +215,174 @@ PSP is not a supported Rust target, so `std` falls through to the `unsupported` 
 - File paths use PSP device notation: `ms0:/PSP/GAME/...`, `host0:/...`
 
 See `examples/rust-std-hello-world/` for a complete example.
+
+## Usage
+
+To use the `psp` crate in your own project, add it as a git dependency:
+
+```toml
+[dependencies]
+psp = { git = "https://github.com/AndrewAltimit/rust-psp", branch = "main" }
+```
+
+In your `main.rs` file, set up a basic skeleton:
+
+```rust
+#![no_std]
+#![no_main]
+
+psp::module!("sample_module", 1, 0);
+
+fn psp_main() {
+    psp::enable_home_button();
+    psp::dprintln!("Hello PSP from rust!");
+}
+```
+
+Run `cargo +nightly psp` to build your `EBOOT.PBP` file, or
+`cargo +nightly psp --release` for a release build.
+
+Customize your EBOOT with a `Psp.toml` in your project root (all keys optional):
+
+```toml
+title = "XMB title"
+xmb_icon_png = "path/to/24bit_144x80_image.png"
+xmb_background_png = "path/to/24bit_480x272_background.png"
+xmb_music_at3 = "path/to/ATRAC3_audio.at3"
+```
+
+More options can be found in the schema definition [here](cargo-psp/src/main.rs#L18-L100).
+
+## What's Different from Upstream
+
+### Edition 2024 and Toolchain
+
+- Workspace and all crates updated to Rust edition 2024
+- All `#[no_mangle]` and `#[link_section]` attributes updated to `#[unsafe(no_mangle)]` / `#[unsafe(link_section)]` syntax
+- Re-exported `paste::paste` for `$crate::paste!` macro resolution in edition 2024
+- Workspace lints configured (`unsafe_op_in_unsafe_fn = "warn"`, clippy lints)
+- Removed 4 stabilized nightly features (`global_asm`, `const_loop`, `const_if_match`, `panic_info_message`)
+
+### Safety Fixes
+
+- **C runtime intrinsics (CRITICAL):** Reverted `memset`/`memcpy`/`memmove` implementations to manual byte loops. LLVM lowers `core::ptr::write_bytes`/`copy`/`copy_nonoverlapping` back to C memset/memcpy/memmove calls, causing infinite recursion when those functions ARE the implementation. On MIPS this manifests as "jump to invalid address", not a stack overflow.
+- **Use-after-free in test_runner:** Fixed `psp_filename()` returning a pointer to a dropped `String` -- the format buffer now outlives the syscall.
+- **Thread-unsafe panic counter:** Replaced `static mut PANIC_COUNT` with `AtomicUsize` for safe concurrent access.
+- **Allocator overflow checks:** Added `checked_add` for size + alignment calculations in `SystemAlloc::alloc` to prevent integer overflow.
+- **OOM diagnostic:** Added explicit "out of memory" message before spin loop in the allocation error handler.
+- **Global allow scoping:** Removed blanket `#![allow(unsafe_op_in_unsafe_fn)]` from crate root; scoped allows only where needed in `debug.rs`, `sys/mod.rs`, `panic.rs`.
+- **Screenshot BmpHeader:** Replaced `core::mem::transmute` with safe field-by-field LE byte serialization.
+- **libunwind malloc/free shims:** Overflow-safe `malloc` with `checked_add` and validated `Layout`; null-safe `free`; uses `size_of::<usize>()` instead of hardcoded `4` for pointer-width portability.
+
+### Safety Hardening (Refactor Rounds 1-3)
+
+- **GU matrix stack:** Fixed `sceGumMatrixMode` writing out of bounds with unchecked `current_mode` index -- added bounds check returning early on invalid mode.
+- **GU projection matrix:** Fixed `sceGumOrtho` using wrong variable (`delta_x` instead of `delta_y`) for Y-axis scaling.
+- **Allocator double-free guard:** `SystemAlloc::dealloc` now checks freed pointers against allocation base range before dereferencing the stored size.
+- **VRAM allocator alignment:** Fixed `alloc()` using `checked_add` after alignment calculation to prevent silent wraparound.
+- **Eliminated UB in GU:** Replaced raw pointer arithmetic with `addr_of_mut!` and safe indexing throughout `gu.rs`.
+- **Panic handler hardening:** `AtomicUsize` ordering upgraded from `Relaxed` to `SeqCst` for cross-thread panic visibility.
+
+### VRAM Allocator
+
+- Changed `alloc()` from panicking to returning `Result<VramMemChunk, VramAllocError>`
+- Added structured error types: `OutOfMemory { requested, available }`, `UnsupportedPixelFormat`, and `Overflow`
+- VRAM base address now uses `sceGeEdramGetAddr()` instead of hardcoded constants
+- Replaced `static mut VRAM_ALLOCATOR` singleton with atomic take pattern (`AtomicBool` guard)
+- Added `checked_add` in `alloc()` and `checked_mul` in `alloc_sized()` to prevent integer overflow
+
+### Hardware Constants
+
+- Extracted magic numbers into `psp/src/constants.rs`: `SCREEN_WIDTH`, `SCREEN_HEIGHT`, `BUF_WIDTH`, `VRAM_BASE_UNCACHED`, thread priorities, NID values
+- Module macros and `enable_home_button()` use named constants instead of raw numbers
+
+### Thread-Safe Debug Printing
+
+- `dprintln!`/`dprint!` macros now use a `SpinMutex` (atomic spinlock) to protect the character buffer
+- Eliminates `static mut` data race for multi-threaded PSP homebrew
+- Zero overhead on single-core PSP (compiler barrier only, no bus contention)
+
+### Error Handling (cargo-psp)
+
+- All tool binaries (`prxgen`, `pack-pbp`, `mksfo`, `prxmin`, `cargo-psp`) refactored from `unwrap()`/`panic!()` to `Result` with `anyhow` context
+- `fix_imports.rs`: stub position lookup validated with descriptive error for malformed PRX files
+- `build.rs`: replaced unwraps with fallible error handling
+- `cargo-psp` main: cargo message parse errors handled gracefully; title fallback has descriptive error
+- Descriptive error messages with recovery hints
+
+### Features
+
+- `kernel` feature flag added for kernel mode module support (`PSP_MODULE_INFO` flag `0x1000`)
+- `std` support via sysroot overlay and FFI bridge (see [Standard Library Support](#standard-library-support))
+- `libm` dependency added for floating-point math in `no_std`
+
+### Upstream Issues Fixed
+
+| Upstream Issue | Description | Fix |
+|---------------|-------------|-----|
+| [#120](https://github.com/overdrivenpotato/rust-psp/issues/120) | VRAM allocator panics | Result API + atomic singleton + overflow checks |
+| [#126](https://github.com/overdrivenpotato/rust-psp/issues/126) | clippy warnings in cargo-psp | Full anyhow refactor |
+| [#156](https://github.com/overdrivenpotato/rust-psp/issues/156) | Excessive nightly features | 4 stabilized features removed |
+| [#75](https://github.com/overdrivenpotato/rust-psp/issues/75) | memcpy/memset improvements | Idiomatic ptr methods + documented footgun |
+| [#165](https://github.com/overdrivenpotato/rust-psp/issues/165) | Panic/exception support | Hardened malloc/free shims |
+
+## Running Examples
+
+Enter one of the example directories, `examples/hello-world` for instance, and
+run `cargo psp`.
+
+This will create an `EBOOT.PBP` file under `target/mipsel-sony-psp/debug/`
+
+Assuming you have a PSP with custom firmware installed, you can simply copy this
+file into a new directory under `PSP/GAME` on your memory stick, and it will
+show up in your XMB menu.
+
+```
+.
++-- PSP
+    +-- GAME
+        +-- hello-world
+            +-- EBOOT.PBP
+```
+
+If you do not have a PSP, you can test with PPSSPP:
+
+```bash
+# Build your EBOOT
+cd examples/hello-world
+cargo +nightly psp --release
+
+# Run in PPSSPP (install from https://ppsspp.org)
+ppsspp target/mipsel-sony-psp/release/EBOOT.PBP
+```
+
+Note that graphics code is very sensitive -- if you're writing graphics code we
+recommend developing on real hardware. PPSSPP is more relaxed in some aspects.
+
+## Debugging
+
+Using psplink and psp-gdb from the [pspdev github organization](https://github.com/pspdev) (`psplinkusb v3.1.0 and GNU gdb (GDB) 11.0.50.20210718-git` or later), Rust types are fully supported. Enable debug symbols in your release binaries:
+
+```toml
+[profile.release]
+debug = true
+```
+
+Follow the instructions in part 6 of [the PSPlink manual](https://usermanual.wiki/Document/psplinkmanual.1365336729/).
+
+## Troubleshooting
+
+### `error[E0460]: found possibly newer version of crate ...`
+
+```
+error[E0460]: found possibly newer version of crate `panic_unwind` which `psp` depends on
+```
+
+Clean your target directory:
+
+```sh
+cargo clean
+```
 
 ## CI/CD
 
@@ -344,101 +527,6 @@ cargo +nightly psp --release
 ```
 
 **Do NOT run `cargo install cargo-psp`** -- this would install the upstream version from crates.io, not this fork. Use the local `cargo-psp/` directory or download pre-built binaries from [Releases](../../releases).
-
-## Running Examples
-
-Enter one of the example directories, `examples/hello-world` for instance, and
-run `cargo psp`.
-
-This will create an `EBOOT.PBP` file under `target/mipsel-sony-psp/debug/`
-
-Assuming you have a PSP with custom firmware installed, you can simply copy this
-file into a new directory under `PSP/GAME` on your memory stick, and it will
-show up in your XMB menu.
-
-```
-.
-+-- PSP
-    +-- GAME
-        +-- hello-world
-            +-- EBOOT.PBP
-```
-
-If you do not have a PSP, you can test with PPSSPP:
-
-```bash
-# Build your EBOOT
-cd examples/hello-world
-cargo +nightly psp --release
-
-# Run in PPSSPP (install from https://ppsspp.org)
-ppsspp target/mipsel-sony-psp/release/EBOOT.PBP
-```
-
-Note that graphics code is very sensitive -- if you're writing graphics code we
-recommend developing on real hardware. PPSSPP is more relaxed in some aspects.
-
-## Usage
-
-To use the `psp` crate in your own project, add it as a git dependency:
-
-```toml
-[dependencies]
-psp = { git = "https://github.com/AndrewAltimit/rust-psp", branch = "main" }
-```
-
-In your `main.rs` file, set up a basic skeleton:
-
-```rust
-#![no_std]
-#![no_main]
-
-psp::module!("sample_module", 1, 0);
-
-fn psp_main() {
-    psp::enable_home_button();
-    psp::dprintln!("Hello PSP from rust!");
-}
-```
-
-Run `cargo +nightly psp` to build your `EBOOT.PBP` file, or
-`cargo +nightly psp --release` for a release build.
-
-Customize your EBOOT with a `Psp.toml` in your project root (all keys optional):
-
-```toml
-title = "XMB title"
-xmb_icon_png = "path/to/24bit_144x80_image.png"
-xmb_background_png = "path/to/24bit_480x272_background.png"
-xmb_music_at3 = "path/to/ATRAC3_audio.at3"
-```
-
-More options can be found in the schema definition [here](cargo-psp/src/main.rs#L18-L100).
-
-## Debugging
-
-Using psplink and psp-gdb from the [pspdev github organization](https://github.com/pspdev) (`psplinkusb v3.1.0 and GNU gdb (GDB) 11.0.50.20210718-git` or later), Rust types are fully supported. Enable debug symbols in your release binaries:
-
-```toml
-[profile.release]
-debug = true
-```
-
-Follow the instructions in part 6 of [the PSPlink manual](https://usermanual.wiki/Document/psplinkmanual.1365336729/).
-
-## Troubleshooting
-
-### `error[E0460]: found possibly newer version of crate ...`
-
-```
-error[E0460]: found possibly newer version of crate `panic_unwind` which `psp` depends on
-```
-
-Clean your target directory:
-
-```sh
-cargo clean
-```
 
 ## Upstream
 

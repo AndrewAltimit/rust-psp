@@ -2,13 +2,13 @@
 #![no_main]
 
 use core::{f32::consts::PI, ptr};
+use psp::Align16;
 use psp::sys::{
     self, ClearBuffer, DepthFunc, DisplayPixelFormat, FrontFaceDirection, GuContextType,
     GuPrimitive, GuState, GuSyncBehavior, GuSyncMode, MipmapLevel, ScePspFVector3, ShadingModel,
     TextureColorComponent, TextureEffect, TextureFilter, TexturePixelFormat, VertexType,
 };
 use psp::vram_alloc::get_vram_allocator;
-use psp::Align16;
 use psp::{BUF_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 
 psp::module!("sample_cube", 1, 1);
@@ -294,11 +294,15 @@ unsafe fn psp_main_inner() {
     psp::enable_home_button();
 
     let allocator = get_vram_allocator().unwrap();
-    let fbp0 =
-        allocator.alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888);
-    let fbp1 =
-        allocator.alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888);
-    let zbp = allocator.alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm4444);
+    let fbp0 = allocator
+        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
+        .unwrap();
+    let fbp1 = allocator
+        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
+        .unwrap();
+    let zbp = allocator
+        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm4444)
+        .unwrap();
     // Attempting to free the three VRAM chunks at this point would give a
     // compile-time error since fbp0, fbp1 and zbp are used later on
     //allocator.free_all();
@@ -307,10 +311,7 @@ unsafe fn psp_main_inner() {
 
     sys::sceGuInit();
 
-    sys::sceGuStart(
-        GuContextType::Direct,
-        &mut LIST.0 as *mut [u32; 0x40000] as *mut _,
-    );
+    sys::sceGuStart(GuContextType::Direct, &raw mut LIST.0 as *mut _);
     sys::sceGuDrawBuffer(
         DisplayPixelFormat::Psm8888,
         fbp0.as_mut_ptr_from_zero() as _,
@@ -347,10 +348,7 @@ unsafe fn psp_main_inner() {
     let mut val = 0.0;
 
     loop {
-        sys::sceGuStart(
-            GuContextType::Direct,
-            &mut LIST.0 as *mut [u32; 0x40000] as *mut _,
-        );
+        sys::sceGuStart(GuContextType::Direct, &raw mut LIST.0 as *mut _);
 
         // clear screen
         sys::sceGuClearColor(0xff554433);

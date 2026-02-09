@@ -1,15 +1,13 @@
 #![no_std]
 #![no_main]
 
-use core::iter::FromIterator;
-
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::{
+    Terminal,
     layout::Margin,
     style::{Color, Stylize},
     text::{Line, Masked, Span, Text},
     widgets::{Block, BorderType, Paragraph, Wrap},
-    Terminal,
 };
 
 use psp::embedded_graphics::Framebuffer;
