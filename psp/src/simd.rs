@@ -198,6 +198,52 @@ pub fn vec4_scale(v: &Vec4, s: f32) -> Vec4 {
     out
 }
 
+/// Compute the length (magnitude) of a Vec4.
+pub fn vec4_length(v: &Vec4) -> f32 {
+    let result: f32;
+    let v_ptr = v.0.as_ptr();
+    unsafe {
+        vfpu_asm!(
+            "lv.q C000, 0({v_ptr})",
+            "vdot.q S010, C000, C000",
+            "vsqrt.s S010, S010",
+            "mfv {tmp}, S010",
+            "mtc1 {tmp}, {fout}",
+            "nop",
+            v_ptr = in(reg) v_ptr,
+            tmp = out(reg) _,
+            fout = out(freg) result,
+            options(nostack),
+        );
+    }
+    result
+}
+
+/// Compute the distance between two Vec4 points.
+pub fn vec4_distance(a: &Vec4, b: &Vec4) -> f32 {
+    let result: f32;
+    let a_ptr = a.0.as_ptr();
+    let b_ptr = b.0.as_ptr();
+    unsafe {
+        vfpu_asm!(
+            "lv.q C000, 0({a_ptr})",
+            "lv.q C010, 0({b_ptr})",
+            "vsub.q C000, C000, C010",
+            "vdot.q S020, C000, C000",
+            "vsqrt.s S020, S020",
+            "mfv {tmp}, S020",
+            "mtc1 {tmp}, {fout}",
+            "nop",
+            a_ptr = in(reg) a_ptr,
+            b_ptr = in(reg) b_ptr,
+            tmp = out(reg) _,
+            fout = out(freg) result,
+            options(nostack),
+        );
+    }
+    result
+}
+
 /// Compute the cross product of two 3D vectors (w component set to 0).
 pub fn vec3_cross(a: &Vec4, b: &Vec4) -> Vec4 {
     let mut out = Vec4::ZERO;

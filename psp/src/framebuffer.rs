@@ -80,6 +80,12 @@ impl DoubleBuffer {
     ///
     /// `vsync`: If true, `swap()` waits for vertical blank before
     /// switching buffers, preventing tearing.
+    ///
+    /// # Important
+    ///
+    /// You **must** call [`init()`](Self::init) before using the double
+    /// buffer. Without it, the display mode is not configured and you
+    /// will get a black screen with no error.
     pub fn new(format: DisplayPixelFormat, vsync: bool) -> Self {
         let fb_size = framebuffer_size(format);
         Self {

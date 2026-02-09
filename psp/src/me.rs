@@ -186,7 +186,7 @@ mod status {
 /// `boot_params`, avoiding a race where `boot_params` would need to be
 /// written twice.
 #[cfg(feature = "kernel")]
-#[repr(C)]
+#[repr(C, align(64))]
 struct MeSharedState {
     /// Task status (see [`status`] module).
     status: u32,

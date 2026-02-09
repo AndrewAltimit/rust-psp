@@ -39,8 +39,13 @@ pub mod debug;
 
 #[macro_use]
 mod vfpu;
+pub mod audio;
 pub mod audio_mixer;
 pub mod cache;
+#[cfg(not(feature = "stub-only"))]
+pub mod callback;
+pub mod dialog;
+pub mod display;
 pub mod dma;
 mod eabi;
 pub mod framebuffer;
@@ -52,6 +57,9 @@ pub mod math;
 #[cfg(feature = "kernel")]
 pub mod me;
 pub mod mem;
+#[cfg(not(feature = "stub-only"))]
+pub mod net;
+pub mod power;
 pub mod simd;
 pub mod sync;
 pub mod sys;
@@ -62,6 +70,7 @@ pub mod thread;
 pub mod time;
 #[cfg(not(feature = "stub-only"))]
 pub mod vram_alloc;
+pub mod wlan;
 
 #[cfg(not(feature = "stub-only"))]
 mod alloc_impl;

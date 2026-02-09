@@ -196,11 +196,17 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
 ///
 /// The PSP passes `argp` pointing to a buffer containing the raw pointer
 /// to our `Box<dyn FnOnce() -> i32>`.
+///
+/// Panics are caught with `catch_unwind` to prevent unwinding across the
+/// `extern "C"` boundary, which would abort the process.
 unsafe extern "C" fn trampoline(_args: usize, argp: *mut c_void) -> i32 {
     let ptr_to_box = argp as *const *mut (dyn FnOnce() -> i32 + Send + 'static);
     let raw = unsafe { *ptr_to_box };
     let closure = unsafe { Box::from_raw(raw) };
-    closure()
+    match crate::catch_unwind(core::panic::AssertUnwindSafe(closure)) {
+        Ok(code) => code,
+        Err(_) => -0x7FFF_FFFF, // panic sentinel
+    }
 }
 
 // ── JoinHandle ──────────────────────────────────────────────────────
