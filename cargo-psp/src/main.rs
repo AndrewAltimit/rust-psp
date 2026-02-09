@@ -153,6 +153,165 @@ const MINIMUM_RUSTC_VERSION: Version = Version {
     build: BuildMetadata::EMPTY,
 };
 
+/// Prepare a merged sysroot that overlays PSP PAL files on top of the
+/// standard rust-src component. The merged directory is placed at
+/// `target/psp-std-sysroot/` and reused across builds.
+fn prepare_psp_sysroot() -> Result<()> {
+    use std::path::Path;
+    use std::time::SystemTime;
+
+    // Locate the installed rust-src component.
+    let sysroot_output = Command::new("rustc")
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .context("failed to run `rustc --print sysroot`")?;
+    if !sysroot_output.status.success() {
+        bail!("`rustc --print sysroot` failed");
+    }
+    let sysroot =
+        String::from_utf8(sysroot_output.stdout).context("rustc sysroot path is not UTF-8")?;
+    let sysroot = sysroot.trim();
+    let rust_src = Path::new(sysroot).join("lib/rustlib/src/rust");
+
+    if !rust_src.join("library/std").exists() {
+        bail!(
+            "rust-src component not found at {}.\n\
+             Please run: rustup component add rust-src",
+            rust_src.display()
+        );
+    }
+
+    // Locate our PSP overlay source.
+    // Walk up from the current dir to find the repo root containing rust-std-src/.
+    let overlay_src = find_repo_root()?.join("rust-std-src");
+    if !overlay_src.join("library").exists() {
+        bail!(
+            "PSP std overlay not found at {}.\n\
+             Expected rust-std-src/library/ in the repository root.",
+            overlay_src.display()
+        );
+    }
+
+    let dest = env::current_dir()
+        .context("failed to get current dir")?
+        .join("target")
+        .join("psp-std-sysroot");
+
+    // Check if we can skip re-creating the sysroot.
+    let marker = dest.join(".psp-sysroot-stamp");
+    if marker.exists() {
+        // Re-create if any overlay file is newer than the marker.
+        let marker_time = fs::metadata(&marker)
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
+        let overlay_modified = newest_mtime(&overlay_src)?;
+        if overlay_modified <= marker_time {
+            eprintln!("[NOTE]: PSP sysroot is up-to-date, skipping preparation.");
+            return Ok(());
+        }
+    }
+
+    eprintln!("[NOTE]: Preparing PSP std sysroot at {}", dest.display());
+
+    // Clean and recreate.
+    if dest.exists() {
+        fs::remove_dir_all(&dest).context("failed to remove old sysroot")?;
+    }
+    fs::create_dir_all(&dest).context("failed to create sysroot dir")?;
+
+    // Copy the base rust-src files we need.
+    copy_dir_recursive(&rust_src.join("library"), &dest.join("library"))?;
+
+    // Copy the src directory if it exists (some toolchains include it).
+    let src_dir = rust_src.join("src");
+    if src_dir.exists() {
+        copy_dir_recursive(&src_dir, &dest.join("src"))?;
+    }
+
+    // Overlay our PSP-specific files on top.
+    copy_dir_recursive(&overlay_src.join("library"), &dest.join("library"))?;
+
+    // Write a timestamp marker.
+    fs::write(&marker, "").context("failed to write sysroot stamp")?;
+
+    eprintln!("[NOTE]: PSP std sysroot prepared successfully.");
+    Ok(())
+}
+
+/// Find the repository root by walking up from the current directory,
+/// looking for a directory containing `rust-std-src/`.
+fn find_repo_root() -> Result<std::path::PathBuf> {
+    let mut dir = env::current_dir().context("failed to get current dir")?;
+    loop {
+        if dir.join("rust-std-src").exists() {
+            return Ok(dir);
+        }
+        if !dir.pop() {
+            bail!(
+                "could not find repository root (looking for rust-std-src/ directory).\n\
+                 Make sure you're building from within the rust-psp repository."
+            );
+        }
+    }
+}
+
+/// Recursively copy a directory. If files exist at the destination, they are
+/// overwritten (this is used for the overlay step).
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)
+            .with_context(|| format!("failed to create dir {}", dst.display()))?;
+    }
+    for entry in
+        fs::read_dir(src).with_context(|| format!("failed to read dir {}", src.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).with_context(|| {
+                format!(
+                    "failed to copy {} -> {}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Get the newest modification time of any file under a directory.
+fn newest_mtime(dir: &std::path::Path) -> Result<std::time::SystemTime> {
+    let mut newest = std::time::SystemTime::UNIX_EPOCH;
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("failed to read dir {}", dir.display()))?
+    {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+
+        if file_type.is_dir() {
+            let sub = newest_mtime(&path)?;
+            if sub > newest {
+                newest = sub;
+            }
+        } else if let Ok(meta) = fs::metadata(&path)
+            && let Ok(mtime) = meta.modified()
+            && mtime > newest
+        {
+            newest = mtime;
+        }
+    }
+    Ok(newest)
+}
+
 fn main() -> Result<()> {
     let rustc_version = rustc_version::version_meta().context("failed to query rustc version")?;
 
@@ -203,16 +362,22 @@ fn main() -> Result<()> {
     // Skip `cargo psp`
     let args = env::args().skip(2);
 
-    let build_std_flag = match env::var("RUST_PSP_BUILD_STD") {
-        Ok(_) => {
-            eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, using \"build-std\".");
-            "build-std"
-        },
-        Err(_) => "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort",
+    let build_std = env::var("RUST_PSP_BUILD_STD").is_ok();
+    let build_std_flag = if build_std {
+        eprintln!("[NOTE]: Detected RUST_PSP_BUILD_STD env var, building std for PSP.");
+        "build-std=std,core,alloc,panic_unwind,panic_abort"
+    } else {
+        "build-std=core,compiler_builtins,alloc,panic_unwind,panic_abort"
     };
 
+    // When building full std, prepare a merged sysroot that overlays PSP PAL files.
+    if build_std {
+        prepare_psp_sysroot().context("failed to prepare PSP std sysroot")?;
+    }
+
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut build_process = Command::new(&cargo)
+    let mut build_cmd = Command::new(&cargo);
+    build_cmd
         .arg("build")
         .arg("-Z")
         .arg(build_std_flag)
@@ -220,9 +385,20 @@ fn main() -> Result<()> {
         .arg("mipsel-sony-psp")
         .arg("--message-format=json-render-diagnostics")
         .args(args)
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("failed to spawn `cargo build`")?;
+        .stdout(Stdio::piped());
+
+    if build_std {
+        // __CARGO_TESTS_ONLY_SRC_ROOT must point to the workspace root
+        // containing Cargo.toml (i.e. the library/ directory).
+        let sysroot_dir = env::current_dir()
+            .context("failed to get current dir")?
+            .join("target")
+            .join("psp-std-sysroot")
+            .join("library");
+        build_cmd.env("__CARGO_TESTS_ONLY_SRC_ROOT", &sysroot_dir);
+    }
+
+    let mut build_process = build_cmd.spawn().context("failed to spawn `cargo build`")?;
 
     let lone = {
         let output = Command::new(cargo)

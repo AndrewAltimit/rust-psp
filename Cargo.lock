@@ -351,6 +351,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-mode-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"

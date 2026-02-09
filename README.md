@@ -71,6 +71,7 @@ See `examples/` directory for sample programs.
 ### Features
 
 - `kernel` feature flag added for kernel mode module support (`PSP_MODULE_INFO` flag `0x1000`)
+- `std` support via sysroot overlay and FFI bridge (see [Standard Library Support](#standard-library-support))
 - `libm` dependency added for floating-point math in `no_std`
 
 ### Upstream Issues Fixed
@@ -128,6 +129,77 @@ fn psp_main() {
 - Kernel-mode EBOOTs run from `ms0:/PSP/GAME/` like user-mode EBOOTs
 
 See `examples/kernel-mode/` for a complete example.
+
+## Standard Library Support
+
+This fork adds experimental `std` support for PSP, allowing use of `String`, `Vec`, `std::fs`, `std::thread`, `std::sync`, `std::time`, and `println!()` on real hardware.
+
+### Quick Start
+
+```rust
+#![feature(restricted_std)]
+#![no_main]
+
+psp::module!("rust_std_hello_world", 1, 1);
+
+fn psp_main() {
+    psp::enable_home_button();
+
+    let greeting = String::from("Hello from std!");
+    psp::dprintln!("{}", greeting);
+
+    let people = vec!["sajattack", "overdrivenpotato", "iridescence"];
+    for person in people {
+        psp::dprint!("Hello, {}!\n", person);
+    }
+}
+```
+
+Enable `std` in your `Cargo.toml`:
+
+```toml
+[dependencies]
+psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["std"] }
+```
+
+Build with `RUST_PSP_BUILD_STD=1`:
+
+```bash
+RUST_PSP_BUILD_STD=1 cargo +nightly psp --release
+```
+
+### How It Works
+
+PSP is not a supported Rust target, so `std` falls through to the `unsupported` PAL by default. This fork provides a PSP-specific Platform Abstraction Layer (PAL) via a sysroot overlay:
+
+1. **`rust-std-src/`** contains PSP PAL source files that implement std's internal interfaces using PSP syscalls
+2. **At build time**, `cargo-psp` creates a merged sysroot by copying the installed `rust-src` component and overlaying PSP files on top
+3. **`-Z build-std`** rebuilds std from the merged source, producing a PSP-aware standard library
+4. **`psp/src/std_support/`** exports `#[no_mangle] extern "C"` FFI bridge functions that the PAL calls at link time
+
+### What's Supported
+
+| Module | Status | Implementation |
+|--------|--------|---------------|
+| `String`, `Vec`, collections | Working | PSP kernel memory allocator |
+| `std::thread` | Working | `sceKernelCreateThread` / `sceKernelStartThread` |
+| `std::sync::Mutex` | Working | PSP lightweight mutexes (`sceKernelLwMutex*`) |
+| `std::sync::Condvar` | Working | PSP event flags (`sceKernelEventFlag*`) |
+| `std::time::Instant` | Working | `sceKernelGetSystemTimeWide` (microsecond precision) |
+| `std::time::SystemTime` | Working | `sceRtcGetCurrentTick` |
+| `std::fs` | Working | `sceIo*` (read/write files on `ms0:/`, `host0:/`, etc.) |
+| `std::io::stdout/stderr` | Working | `sceKernelStdout()` / `sceKernelStderr()` file descriptors |
+| `std::os::psp::raw::RawFd` | Working | PSP `SceUid` as raw file descriptor |
+| `std::net`, `std::process` | Unsupported | Returns `io::ErrorKind::Unsupported` |
+
+### Important Notes
+
+- User crates must use `#![feature(restricted_std)]` and `#![no_main]`
+- Entry point is `fn psp_main()` (not `fn main()`), declared via `psp::module!()`
+- PSP is single-core MIPS with preemptive threading -- `available_parallelism()` returns 1
+- File paths use PSP device notation: `ms0:/PSP/GAME/...`, `host0:/...`
+
+See `examples/rust-std-hello-world/` for a complete example.
 
 ## CI/CD
 
@@ -188,6 +260,7 @@ Tagging a commit with `v*` (e.g., `v0.1.0`) triggers a release build:
 rust-psp/
 +-- psp/                # Core PSP crate (sceGu, sceCtrl, sys bindings, vram_alloc)
 +-- cargo-psp/          # Build tool: cross-compile + prxgen + pack-pbp -> EBOOT.PBP
++-- rust-std-src/       # PSP PAL overlay for std support (merged with rust-src at build time)
 +-- examples/           # Sample programs (hello-world, cube, gu-background, etc.)
 +-- ci/                 # CI test harness, std verification, PPSSPPHeadless Dockerfile
 +-- docker/             # Docker images (rust-ci)
@@ -387,5 +460,5 @@ Upstream repository: [github.com/overdrivenpotato/rust-psp](https://github.com/o
 - [x] Full parity with user mode support in PSPSDK
 - [x] Port definitions to `libc` crate
 - [x] Kernel mode module support (`kernel` feature flag)
-- [ ] Add `std` support
+- [x] Add `std` support
 - [ ] Automatically sign EBOOT.PBP files to run on unmodified PSPs

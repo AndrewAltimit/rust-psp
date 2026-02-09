@@ -6,8 +6,6 @@
 #[cfg(not(feature = "std"))]
 use crate::sys;
 
-#[cfg(feature = "std")]
-use core::{any::Any, mem::ManuallyDrop};
 #[cfg(not(feature = "std"))]
 use core::{
     any::Any,
@@ -18,6 +16,7 @@ use core::{
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, string::String};
 
+#[cfg(not(feature = "std"))]
 #[link(name = "unwind", kind = "static")]
 unsafe extern "C" {}
 
@@ -125,6 +124,7 @@ fn rust_panic_with_hook(payload: &mut dyn BoxMeUp) -> ! {
     rust_panic(payload)
 }
 
+#[cfg(not(feature = "std"))]
 fn update_panic_count(amt: isize) -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
     static PANIC_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -137,11 +137,13 @@ fn update_panic_count(amt: isize) -> usize {
 }
 
 #[allow(improper_ctypes)]
+#[cfg(not(feature = "std"))]
 unsafe extern "C" {
     #[cfg_attr(not(bootstrap), rustc_std_internal_symbol)]
     fn __rust_panic_cleanup(payload: *mut u8) -> *mut (dyn Any + Send + 'static);
 }
 
+#[cfg(not(feature = "std"))]
 #[allow(improper_ctypes)]
 unsafe extern "C-unwind" {
     #[cfg_attr(not(bootstrap), rustc_std_internal_symbol)]
@@ -168,6 +170,7 @@ extern "C" fn __rust_drop_panic() -> ! {
 }
 
 /// Invoke a closure, capturing the cause of an unwinding panic if one occurs.
+#[cfg(not(feature = "std"))]
 #[inline(never)]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub fn catch_unwind<R, F: FnOnce() -> R>(f: F) -> Result<R, Box<dyn Any + Send>> {
