@@ -157,6 +157,12 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
     attributes: ThreadAttributes,
     f: F,
 ) -> Result<JoinHandle, ThreadError> {
+    // Validate null termination — the PSP kernel expects a C string.
+    // Without this check, safe code could cause out-of-bounds reads.
+    if name.last() != Some(&0) {
+        return Err(ThreadError(-1));
+    }
+
     // Box the closure into a ThreadPayload with an atomic flag.
     let payload = Box::into_raw(Box::new(ThreadPayload {
         closure: Some(Box::new(f)),
