@@ -51,7 +51,82 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | **Kernel-only** | `sircs` | 1 | Infrared remote control (SIRCS protocol) |
 | **Kernel-only** | `codec` | 10 | Hardware video/audio codec control |
 
-### High-Level Utilities
+### Platform SDK
+
+30+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
+
+#### System & Lifecycle
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::callback` | `setup_exit_callback()` | Register exit callback (spawns handler thread) |
+| `psp::power` | `get_clock()`, `set_clock()`, `battery_info()` | CPU/bus clock control, battery status, AC detection |
+| `psp::display` | `wait_vblank()`, `set_framebuf()` | VBlank sync, framebuffer management |
+| `psp::time` | `Instant`, `Duration`, `FrameTimer` | Microsecond timing, frame rate measurement |
+| `psp::timer` | `Alarm`, `VTimer` | One-shot alarms (closure-based), virtual timers |
+| `psp::dialog` | `message_dialog()`, `confirm_dialog()` | System message/confirmation/error dialogs |
+
+#### Threading & Sync
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::thread` | `spawn()`, `JoinHandle`, `sleep_ms()` | Thread creation with closure trampolines, join/sleep |
+| `psp::sync` | `SpinMutex`, `SpinRwLock`, `Semaphore`, `EventFlag` | Spinlocks, kernel semaphores, event flags, SPSC queue |
+
+#### Input
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::input` | `Controller`, `analog_x_f32()`, `is_pressed()` | Button press/release detection, analog deadzone normalization |
+
+#### File I/O & Config
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::io` | `File`, `ReadDir`, `read_to_vec()`, `write_bytes()` | RAII file handles, directory iteration, convenience I/O |
+| `psp::config` | `Config`, `save()`, `load()` | Key-value store with binary RCFG format (bool/i32/f32/str) |
+
+#### Audio
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::audio` | `AudioChannel`, `output_blocking()` | RAII audio channels with PCM output |
+| `psp::audio_mixer` | `Mixer`, `Channel` | Multi-channel PCM software mixer |
+
+#### Graphics & Rendering
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::framebuffer` | `DoubleBuffer`, `LayerCompositor` | Double-buffered framebuffer, dirty-rect tracking |
+| `psp::gu_ext` | `setup_2d()`, `SpriteBatch`, `GuStateSnapshot` | 2D rendering helpers, sprite batching, GU state save/restore |
+| `psp::simd` | `Vec4`, `Mat4` | VFPU-accelerated vector/matrix math, easing, color ops |
+| `psp::image` | `decode_jpeg()`, `decode_bmp()`, `load_image()` | Hardware JPEG decode, BMP 24/32-bit decode, auto-detect |
+| `psp::font` | `FontLib`, `Font`, `FontRenderer` | System PGF font loading, VRAM glyph atlas rendering |
+
+#### Networking
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::net` | `TcpStream`, `UdpSocket`, `connect_ap()` | WiFi connect, TCP/UDP sockets (RAII), DNS resolution |
+| `psp::wlan` | `status()`, `is_available()` | WLAN module status query |
+
+#### Hardware & Memory
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::dma` | `memcpy_dma()`, `vram_blit_dma()` | DMA memory copy and VRAM blitting |
+| `psp::cache` | `CachedPtr`, `UncachedPtr` | Cache-aware pointers, dcache flush/invalidate helpers |
+| `psp::mem` | `Partition2Alloc`, `Partition3Alloc` | Typed partition memory allocators |
+| `psp::usb` | `UsbStorageMode`, `is_connected()` | USB bus control, mass storage mode (RAII) |
+
+#### Kernel-Only (requires `--features kernel`)
+
+| Module | Key API | Description |
+|--------|---------|-------------|
+| `psp::me` | `MeExecutor`, `me_boot()` | Media Engine coprocessor boot/task management |
+| `psp::hw` | `hw_read32()`, `hw_write32()`, `Register<T>` | Memory-mapped hardware register I/O |
+
+#### Standalone Utilities
 
 | Module | Description |
 |--------|-------------|
@@ -61,8 +136,6 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `psp::benchmark()` | Cycle-accurate benchmarking via RTC |
 | `psp::math` | VFPU-accelerated `sinf`/`cosf`, full libm math library |
 | `psp::vfpu!()` | Inline VFPU (Vector FPU) assembly macros |
-| `psp::hw` | Memory-mapped hardware register I/O (kernel mode) |
-| `psp::me` | Media Engine coprocessor boot/task management (kernel mode) |
 | `psp::dprintln!()` | Thread-safe debug printing via `SpinMutex` |
 
 ## Features
@@ -83,7 +156,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `rainbow` | `sceGu*`, vertex colors | Animated color gradient |
 | `gu-background` | `sceGu*`, VRAM alloc | Clear screen with solid color |
 | `gu-debug-print` | `sceGu*`, debug font | On-screen debug text via GU |
-| `clock-speed` | `scePower*` | Read/set CPU and bus clock speeds |
+| `clock-speed` | `psp::power` | Read/set CPU and bus clock speeds |
 | `time` | `sceRtc*` | Read and display real-time clock |
 | `wlan` | `sceWlan*` | Query WLAN module status |
 | `msg-dialog` | `sceUtility*` | System message dialog |
@@ -95,9 +168,15 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `vfpu-context-switching` | `vfpu!()`, threads | VFPU context save/restore across threads |
 | `rust-std-hello-world` | `String`, `Vec`, `std` | Standard library on PSP |
 | `kernel-mode` | `module_kernel!()`, NAND, volatile mem | Kernel-mode APIs (requires CFW) |
-| `file-io` | `sceIoOpen/Write/Read/Close` | File write and read-back |
+| `file-io` | `psp::io` | File write and read-back |
 | `screenshot` | `screenshot_bmp()`, `sceIoWrite` | Capture framebuffer to BMP file |
-| `audio-tone` | `sceAudioChReserve`, `sceAudioOutputBlocking` | Generate and play a sine wave |
+| `audio-tone` | `psp::audio::AudioChannel` | Generate and play a sine wave |
+| `config-save` | `psp::config`, `psp::io` | Save and load key-value settings |
+| `input-analog` | `psp::input`, `psp::display` | Controller input with analog deadzone |
+| `net-http` | `psp::net`, `psp::wlan` | Connect to WiFi and fetch HTTP response |
+| `system-font` | `psp::font`, `psp::gu_ext` | Render text using PSP system fonts |
+| `thread-sync` | `psp::thread`, `psp::sync` | Spawn threads sharing a SpinMutex counter |
+| `timer-alarm` | `psp::timer` | One-shot alarm and virtual timer |
 
 ## Kernel Mode
 
@@ -441,7 +520,7 @@ Tagging a commit with `v*` (e.g., `v0.1.0`) triggers a release build:
 
 ```
 rust-psp/
-+-- psp/                # Core PSP crate (sceGu, sceCtrl, sys bindings, vram_alloc)
++-- psp/                # Core PSP crate (~825 syscall bindings + 30 SDK modules)
 +-- cargo-psp/          # Build tool: cross-compile + prxgen + pack-pbp -> EBOOT.PBP
 +-- rust-std-src/       # PSP PAL overlay for std support (merged with rust-src at build time)
 +-- examples/           # Sample programs (hello-world, cube, gu-background, etc.)
