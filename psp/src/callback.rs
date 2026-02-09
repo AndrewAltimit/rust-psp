@@ -78,6 +78,7 @@ pub fn setup_exit_callback() -> Result<(), CallbackError> {
 
     let ret = unsafe { crate::sys::sceKernelStartThread(thid, 0, ptr::null_mut()) };
     if ret < 0 {
+        unsafe { crate::sys::sceKernelDeleteThread(thid) };
         return Err(CallbackError(ret));
     }
 
@@ -103,6 +104,7 @@ pub fn register_exit_callback(
 
     let ret = unsafe { sceKernelRegisterExitCallback(cbid) };
     if ret < 0 {
+        unsafe { crate::sys::sceKernelDeleteCallback(cbid) };
         return Err(CallbackError(ret));
     }
 

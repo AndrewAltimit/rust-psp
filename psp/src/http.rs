@@ -152,6 +152,11 @@ impl<'a> RequestBuilder<'a> {
 
     /// Send the request and return the response.
     pub fn send(self) -> Result<Response, HttpError> {
+        // Validate null termination — the SCE HTTP syscalls expect C strings.
+        if self.url.last() != Some(&0) {
+            return Err(HttpError(-1));
+        }
+
         let content_length = self.body.map(|b| b.len() as u64).unwrap_or(0);
 
         // Create connection + request using URL-based APIs.
@@ -222,8 +227,11 @@ impl<'a> RequestBuilder<'a> {
                 sys::sceHttpReadData(req_id, buf.as_mut_ptr() as *mut c_void, buf.len() as u32)
             };
             if n < 0 {
-                // Read error — return what we have with the status code.
-                break;
+                unsafe {
+                    sys::sceHttpDeleteRequest(req_id);
+                    sys::sceHttpDeleteConnection(conn_id);
+                }
+                return Err(HttpError(n));
             }
             if n == 0 {
                 break;

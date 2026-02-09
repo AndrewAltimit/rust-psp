@@ -189,20 +189,27 @@ fn spawn_inner<F: FnOnce() -> i32 + Send + 'static>(
     Ok(JoinHandle {
         thid,
         joined: false,
+        closure_ptr: raw,
     })
 }
 
 /// C-callable trampoline that runs the boxed closure.
 ///
 /// The PSP passes `argp` pointing to a buffer containing the raw pointer
-/// to our `Box<dyn FnOnce() -> i32>`.
+/// to our double-boxed closure (`*mut Box<dyn FnOnce() -> i32>`).
+/// We double-box because `Box::into_raw` on a trait object yields a fat
+/// pointer (data + vtable), which doesn't fit in the 4-byte thread arg
+/// on MIPS32. The outer `Box` collapses it to a thin pointer.
 ///
 /// Panics are caught with `catch_unwind` to prevent unwinding across the
 /// `extern "C"` boundary, which would abort the process.
 unsafe extern "C" fn trampoline(_args: usize, argp: *mut c_void) -> i32 {
-    let ptr_to_box = argp as *const *mut (dyn FnOnce() -> i32 + Send + 'static);
-    let raw = unsafe { *ptr_to_box };
-    let closure = unsafe { Box::from_raw(raw) };
+    // `argp` points to a buffer containing a thin pointer of type
+    // `*mut Box<dyn FnOnce() -> i32 + Send + 'static>`.
+    let ptr_to_raw = argp as *const *mut Box<dyn FnOnce() -> i32 + Send + 'static>;
+    let raw = unsafe { *ptr_to_raw };
+    // Reconstruct the outer Box, then unbox to get the inner trait object.
+    let closure: Box<dyn FnOnce() -> i32 + Send + 'static> = *unsafe { Box::from_raw(raw) };
     match crate::catch_unwind(core::panic::AssertUnwindSafe(closure)) {
         Ok(code) => code,
         Err(_) => -0x7FFF_FFFF, // panic sentinel
@@ -218,7 +225,15 @@ unsafe extern "C" fn trampoline(_args: usize, argp: *mut c_void) -> i32 {
 pub struct JoinHandle {
     thid: SceUid,
     joined: bool,
+    /// Raw pointer to the double-boxed closure, kept so we can free it
+    /// if the thread is terminated without running its trampoline.
+    closure_ptr: *mut Box<dyn FnOnce() -> i32 + Send + 'static>,
 }
+
+// SAFETY: The closure pointer is only accessed after the thread is
+// terminated (in drop) or after it has finished (in join). The handle
+// itself can safely be sent to another thread.
+unsafe impl Send for JoinHandle {}
 
 impl JoinHandle {
     /// Block until the thread exits and return its exit status.
@@ -227,6 +242,8 @@ impl JoinHandle {
         if ret < 0 {
             return Err(ThreadError(ret));
         }
+        // The trampoline has already freed the closure.
+        self.closure_ptr = core::ptr::null_mut();
         // Retrieve the actual thread exit status.
         let exit_status = unsafe { sceKernelGetThreadExitStatus(self.thid) };
         self.joined = true;
@@ -249,6 +266,12 @@ impl Drop for JoinHandle {
             // Thread was not joined — forcibly terminate and delete it.
             unsafe {
                 sceKernelTerminateDeleteThread(self.thid);
+            }
+            // Free the closure that the trampoline never got to run.
+            if !self.closure_ptr.is_null() {
+                unsafe {
+                    drop(Box::from_raw(self.closure_ptr));
+                }
             }
         }
     }

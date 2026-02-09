@@ -404,10 +404,15 @@ impl Mixer {
 
     /// Output the given buffer to the audio hardware (blocking).
     ///
-    /// The buffer must contain `sample_count * 2` i16 samples
-    /// (interleaved stereo). This call blocks until the hardware is
+    /// The buffer must contain at least `sample_count * 2` i16 samples
+    /// (interleaved stereo). Returns [`MixerError::AudioError`] if the
+    /// buffer is too small. This call blocks until the hardware is
     /// ready for the next buffer.
     pub fn output_blocking(&self, buffer: &[i16]) -> Result<(), MixerError> {
+        let required = self.sample_count as usize * 2; // stereo
+        if buffer.len() < required {
+            return Err(MixerError::AudioError(-1));
+        }
         let ch = self.hw_channel.load(Ordering::Acquire);
         if ch < 0 {
             return Err(MixerError::AudioError(-1));
