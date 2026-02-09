@@ -32,7 +32,11 @@ impl Mutex {
     }
 
     fn ensure_init(&self) {
-        if self.state.load(Ordering::Acquire) == 0 {
+        let s = self.state.load(Ordering::Acquire);
+        if s == 1 {
+            return;
+        }
+        if s == 0 {
             // Try to claim initialization
             if self.state.compare_exchange(0, -1, Ordering::AcqRel, Ordering::Acquire).is_ok() {
                 let name = b"std_mtx\0";
@@ -46,14 +50,18 @@ impl Mutex {
                 };
                 if ret >= 0 {
                     self.state.store(1, Ordering::Release);
+                } else {
+                    // Reset to uninitialized so future attempts can retry,
+                    // then abort since the mutex is unusable.
+                    self.state.store(0, Ordering::Release);
+                    panic!("failed to create PSP LwMutex");
                 }
-                // If creation failed, state stays -1 (poisoned) -- will panic on use
-            } else {
-                // Another thread is initializing -- spin until done
-                while self.state.load(Ordering::Acquire) == -1 {
-                    core::hint::spin_loop();
-                }
+                return;
             }
+        }
+        // Another thread is initializing -- spin until done
+        while self.state.load(Ordering::Acquire) == -1 {
+            core::hint::spin_loop();
         }
     }
 

@@ -45,13 +45,3 @@ pub unsafe extern "C" fn __psp_delete_thread(id: i32) -> i32 {
 pub unsafe extern "C" fn __psp_delay_thread(us: u32) -> i32 {
     unsafe { sys::sceKernelDelayThread(us) }
 }
-
-#[unsafe(no_mangle)]
-pub extern "C" fn __psp_sleep_thread() -> i32 {
-    unsafe { sys::sceKernelSleepThread() }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn __psp_wakeup_thread(id: i32) -> i32 {
-    unsafe { sys::sceKernelWakeupThread(SceUid(id)) }
-}

@@ -7,6 +7,7 @@ use crate::path::{Path, PathBuf};
 pub use crate::sys::fs::common::Dir;
 use crate::sys::time::SystemTime;
 use crate::sys::unsupported;
+use crate::time::Duration;
 
 unsafe extern "C" {
     fn __psp_io_open(file: *const u8, flags: i32, mode: i32) -> i32;
@@ -116,12 +117,48 @@ impl Default for PspDirent {
     }
 }
 
-/// Convert a PspDateTime to a SystemTime (approximate -- using seconds precision).
+/// Convert a PspDateTime to a SystemTime.
+///
+/// Computes seconds since the Unix epoch from the datetime fields, then
+/// adds that offset to UNIX_EPOCH to get a SystemTime.
 fn psp_datetime_to_system_time(dt: &PspDateTime) -> SystemTime {
-    // This is a simplified conversion. We compute an approximate seconds-since-PSP-epoch
-    // and wrap it in SystemTime.
-    // For now, return a default value. Full conversion requires calendar arithmetic.
-    SystemTime::now()
+    use crate::sys::time::UNIX_EPOCH;
+
+    // If the datetime is all zeros, it's unset -- return UNIX_EPOCH as a default.
+    if dt.year == 0 {
+        return UNIX_EPOCH;
+    }
+
+    // Convert to days since Unix epoch (1970-01-01) using calendar arithmetic.
+    let y = dt.year as i64;
+    let m = dt.month as i64;
+    let d = dt.day as i64;
+
+    // Days from 1970-01-01 to the given date.
+    // Use the algorithm: shift March-based year, compute total days.
+    let (y_adj, m_adj) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let days_from_epoch_0 = {
+        // Days from 0000-03-01 to the given date
+        let era_days =
+            365 * y_adj + y_adj / 4 - y_adj / 100 + y_adj / 400 + (m_adj * 306 + 5) / 10 + d - 1;
+        // Subtract days from 0000-03-01 to 1970-01-01 (719468)
+        era_days - 719_468
+    };
+
+    let secs_from_epoch =
+        days_from_epoch_0 * 86400 + dt.hour as i64 * 3600 + dt.minutes as i64 * 60
+            + dt.seconds as i64;
+    let us = dt.microseconds as u64;
+
+    if secs_from_epoch >= 0 {
+        UNIX_EPOCH
+            .checked_add_duration(&Duration::new(secs_from_epoch as u64, (us * 1000) as u32))
+            .unwrap_or(UNIX_EPOCH)
+    } else {
+        UNIX_EPOCH
+            .checked_sub_duration(&Duration::new((-secs_from_epoch) as u64, 0))
+            .unwrap_or(UNIX_EPOCH)
+    }
 }
 
 /// Convert a Path to a null-terminated byte buffer.

@@ -1,6 +1,10 @@
 use crate::sys::{self, SceSysMemBlockTypes, SceSysMemPartitionId, SceUid};
 use core::{mem, ptr};
 
+/// Maximum supported alignment. Alignments larger than this will fail allocation.
+/// This limit exists because we store the padding offset in a single byte.
+const MAX_ALIGN: usize = 255;
+
 /// Allocate memory with alignment support.
 ///
 /// Uses PSP kernel partition memory. Same algorithm as the global allocator in
@@ -8,6 +12,12 @@ use core::{mem, ptr};
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn __psp_alloc(size: u32, align: u32) -> *mut u8 {
     let align = align as usize;
+
+    // Alignment padding is stored as u8, so we cannot support align > 255.
+    if align > MAX_ALIGN {
+        return ptr::null_mut();
+    }
+
     let total = size as usize + mem::size_of::<SceUid>() + align;
 
     let id = unsafe {
@@ -54,6 +64,9 @@ pub unsafe extern "C" fn __psp_realloc(
     new_size: u32,
     align: u32,
 ) -> *mut u8 {
+    if old_ptr.is_null() {
+        return unsafe { __psp_alloc(new_size, align) };
+    }
     let new_ptr = unsafe { __psp_alloc(new_size, align) };
     if new_ptr.is_null() {
         return ptr::null_mut();

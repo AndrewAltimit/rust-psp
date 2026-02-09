@@ -1,4 +1,4 @@
-use crate::sync::atomic::{AtomicI32, Ordering};
+use crate::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use crate::sys::sync::Mutex;
 use crate::time::Duration;
 
@@ -21,6 +21,8 @@ const NOTIFY_BIT: u32 = 0x01;
 pub struct Condvar {
     // Event flag ID for signaling waiters
     evflag_id: AtomicI32,
+    // Number of threads currently waiting
+    num_waiters: AtomicU32,
 }
 
 unsafe impl Send for Condvar {}
@@ -30,6 +32,7 @@ impl Condvar {
     pub const fn new() -> Condvar {
         Condvar {
             evflag_id: AtomicI32::new(-1),
+            num_waiters: AtomicU32::new(0),
         }
     }
 
@@ -64,15 +67,34 @@ impl Condvar {
 
     pub fn notify_one(&self) {
         let id = self.ensure_init();
-        if id >= 0 {
+        if id >= 0 && self.num_waiters.load(Ordering::Acquire) > 0 {
             // Set the notification bit -- one waiter will pick it up and clear it
             unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
         }
     }
 
     pub fn notify_all(&self) {
-        // Same as notify_one on PSP -- all waiters check the bit
-        self.notify_one();
+        let id = self.ensure_init();
+        if id < 0 {
+            return;
+        }
+
+        // Wake all waiters: set the bit once per waiter.
+        // Each waiter uses WAIT_CLEAR, so it atomically clears the bit when woken.
+        // We re-set the bit for each waiter to ensure all get woken.
+        let mut remaining = self.num_waiters.load(Ordering::Acquire);
+        while remaining > 0 {
+            unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
+            // Brief yield to let a waiter consume the signal
+            let prev = remaining;
+            remaining = self.num_waiters.load(Ordering::Acquire);
+            if remaining >= prev {
+                // No waiter consumed it yet or new waiters arrived; avoid infinite loop
+                // by just breaking after one more attempt
+                unsafe { __psp_evflag_set(id, NOTIFY_BIT) };
+                break;
+            }
+        }
     }
 
     pub unsafe fn wait(&self, mutex: &Mutex) {
@@ -80,6 +102,8 @@ impl Condvar {
         if id < 0 {
             return;
         }
+
+        self.num_waiters.fetch_add(1, Ordering::AcqRel);
 
         // Unlock the mutex, wait for signal, re-lock
         unsafe { mutex.unlock() };
@@ -95,6 +119,8 @@ impl Condvar {
             );
         }
 
+        self.num_waiters.fetch_sub(1, Ordering::AcqRel);
+
         mutex.lock();
     }
 
@@ -103,6 +129,8 @@ impl Condvar {
         if id < 0 {
             return false;
         }
+
+        self.num_waiters.fetch_add(1, Ordering::AcqRel);
 
         unsafe { mutex.unlock() };
 
@@ -113,6 +141,8 @@ impl Condvar {
         let ret = unsafe {
             __psp_evflag_wait(id, NOTIFY_BIT, WAIT_OR | WAIT_CLEAR, &mut out_bits, &mut timeout)
         };
+
+        self.num_waiters.fetch_sub(1, Ordering::AcqRel);
 
         mutex.lock();
 
