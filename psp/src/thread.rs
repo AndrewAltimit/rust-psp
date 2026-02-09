@@ -263,14 +263,28 @@ impl JoinHandle {
 impl Drop for JoinHandle {
     fn drop(&mut self) {
         if !self.joined {
-            // Thread was not joined — forcibly terminate and delete it.
-            unsafe {
-                sceKernelTerminateDeleteThread(self.thid);
-            }
-            // Free the closure that the trampoline never got to run.
-            if !self.closure_ptr.is_null() {
+            // Check if the thread has already exited (trampoline ran and freed
+            // the closure). A zero timeout returns immediately.
+            let mut timeout: u32 = 0;
+            let wait_ret = unsafe { sceKernelWaitThreadEnd(self.thid, &mut timeout) };
+            let thread_finished = wait_ret >= 0;
+
+            if thread_finished {
+                // Thread exited naturally — trampoline already freed the
+                // closure. Just delete the thread object.
                 unsafe {
-                    drop(Box::from_raw(self.closure_ptr));
+                    sceKernelDeleteThread(self.thid);
+                }
+            } else {
+                // Thread is still running — forcibly terminate and delete it.
+                unsafe {
+                    sceKernelTerminateDeleteThread(self.thid);
+                }
+                // Free the closure that the trampoline never got to run.
+                if !self.closure_ptr.is_null() {
+                    unsafe {
+                        drop(Box::from_raw(self.closure_ptr));
+                    }
                 }
             }
         }

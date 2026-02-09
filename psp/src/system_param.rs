@@ -48,8 +48,7 @@ fn get_int(id: SystemParamId) -> Result<i32, ParamError> {
 /// Get the system language setting.
 pub fn language() -> Result<SystemParamLanguage, ParamError> {
     let val = get_int(SystemParamId::Language)?;
-    // Transmute is safe because SystemParamLanguage covers all valid firmware values.
-    Ok(unsafe { core::mem::transmute::<i32, SystemParamLanguage>(val) })
+    SystemParamLanguage::try_from(val as u32).map_err(|_| ParamError(val))
 }
 
 /// Get the user's nickname (up to 128 bytes, null-terminated).
@@ -68,13 +67,13 @@ pub fn nickname() -> Result<[u8; 128], ParamError> {
 /// Get the date format preference.
 pub fn date_format() -> Result<SystemParamDateFormat, ParamError> {
     let val = get_int(SystemParamId::DateFormat)?;
-    Ok(unsafe { core::mem::transmute::<i32, SystemParamDateFormat>(val) })
+    SystemParamDateFormat::try_from(val as u32).map_err(|_| ParamError(val))
 }
 
 /// Get the time format preference (12-hour or 24-hour).
 pub fn time_format() -> Result<SystemParamTimeFormat, ParamError> {
     let val = get_int(SystemParamId::TimeFormat)?;
-    Ok(unsafe { core::mem::transmute::<i32, SystemParamTimeFormat>(val) })
+    SystemParamTimeFormat::try_from(val as u32).map_err(|_| ParamError(val))
 }
 
 /// Get the timezone offset in minutes from UTC.

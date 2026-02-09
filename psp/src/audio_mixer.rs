@@ -318,16 +318,16 @@ impl Mixer {
             // Mix this channel's samples into the output
             let stereo_samples = output.len() / 2;
             for i in 0..stereo_samples {
-                let buf_pos = ch.position * 2; // stereo pairs
+                let mut buf_pos = ch.position * 2; // stereo pairs
 
                 if buf_pos + 1 >= ch.buffer.len() {
                     if ch.config.looping {
                         ch.position = 0;
+                        buf_pos = 0;
                     } else {
                         ch.state = ChannelState::Idle;
                         break;
                     }
-                    continue;
                 }
 
                 let src_l = ch.buffer[buf_pos] as i32;
