@@ -32,6 +32,14 @@ impl AudioFormat {
             AudioFormat::Mono => crate::sys::AudioFormat::Mono,
         }
     }
+
+    /// Number of i16 elements per sample (2 for stereo, 1 for mono).
+    fn channels(self) -> usize {
+        match self {
+            AudioFormat::Stereo => 2,
+            AudioFormat::Mono => 1,
+        }
+    }
 }
 
 /// Error from an audio operation, wrapping the raw SCE error code.
@@ -63,6 +71,7 @@ pub fn align_sample_count(count: i32) -> i32 {
 pub struct AudioChannel {
     channel: i32,
     sample_count: i32,
+    format: AudioFormat,
     _marker: PhantomData<*const ()>, // !Send + !Sync
 }
 
@@ -84,6 +93,7 @@ impl AudioChannel {
         Ok(Self {
             channel: ch,
             sample_count: aligned,
+            format,
             _marker: PhantomData,
         })
     }
@@ -91,8 +101,15 @@ impl AudioChannel {
     /// Output PCM audio data, blocking until the hardware buffer is free.
     ///
     /// `volume` ranges from 0 to 0x8000 (max).
-    /// `buf` must contain at least `sample_count` samples (stereo: 2x i16 per sample).
+    /// `buf` must contain at least `sample_count * channels` i16 values
+    /// (stereo: 2 per sample, mono: 1 per sample).
+    ///
+    /// Returns [`AudioError`] if `buf` is too short or the hardware call fails.
     pub fn output_blocking(&self, volume: i32, buf: &[i16]) -> Result<(), AudioError> {
+        let required = self.sample_count as usize * self.format.channels();
+        if buf.len() < required {
+            return Err(AudioError(-1));
+        }
         let ret = unsafe {
             crate::sys::sceAudioOutputBlocking(self.channel, volume, buf.as_ptr() as *mut c_void)
         };
@@ -106,12 +123,19 @@ impl AudioChannel {
     /// Output PCM audio with separate left/right volume, blocking.
     ///
     /// `vol_left` and `vol_right` range from 0 to 0x8000.
+    /// `buf` must contain at least `sample_count * channels` i16 values.
+    ///
+    /// Returns [`AudioError`] if `buf` is too short or the hardware call fails.
     pub fn output_blocking_panning(
         &self,
         vol_left: i32,
         vol_right: i32,
         buf: &[i16],
     ) -> Result<(), AudioError> {
+        let required = self.sample_count as usize * self.format.channels();
+        if buf.len() < required {
+            return Err(AudioError(-1));
+        }
         let ret = unsafe {
             crate::sys::sceAudioOutputPannedBlocking(
                 self.channel,
@@ -154,6 +178,11 @@ impl AudioChannel {
     /// Get the current sample count per buffer.
     pub fn sample_count(&self) -> i32 {
         self.sample_count
+    }
+
+    /// Get the audio format (stereo or mono).
+    pub fn format(&self) -> AudioFormat {
+        self.format
     }
 }
 

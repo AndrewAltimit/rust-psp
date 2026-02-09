@@ -166,7 +166,7 @@ pub fn on_power_event(
 
     Ok(PowerCallbackHandle {
         slot,
-        _cb_id: cbid,
+        cb_id: cbid,
         thread_id: thid,
     })
 }
@@ -177,7 +177,7 @@ pub fn on_power_event(
 #[cfg(not(feature = "stub-only"))]
 pub struct PowerCallbackHandle {
     slot: i32,
-    _cb_id: crate::sys::SceUid,
+    cb_id: crate::sys::SceUid,
     thread_id: crate::sys::SceUid,
 }
 
@@ -187,6 +187,7 @@ impl Drop for PowerCallbackHandle {
         unsafe {
             crate::sys::scePowerUnregisterCallback(self.slot);
             crate::sys::sceKernelTerminateDeleteThread(self.thread_id);
+            crate::sys::sceKernelDeleteCallback(self.cb_id);
         }
     }
 }

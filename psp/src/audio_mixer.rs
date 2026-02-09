@@ -79,6 +79,15 @@ impl Default for ChannelConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelHandle(pub u8);
 
+/// Full-volume value for the fade multiplier.
+const FADE_MAX: i32 = 256;
+
+/// Fixed-point fractional bits for fade arithmetic (16.16).
+const FADE_FP_SHIFT: i32 = 16;
+
+/// Full volume in fixed-point representation (`256 << 16`).
+const FADE_MAX_FP: i32 = FADE_MAX << FADE_FP_SHIFT;
+
 /// Per-channel state stored in the mixer.
 struct Channel {
     state: ChannelState,
@@ -87,10 +96,10 @@ struct Channel {
     buffer: &'static [i16],
     /// Current read position in the buffer (in samples, not bytes).
     position: usize,
-    /// Fade volume multiplier (0..=256, where 256 = full volume).
-    fade_level: u16,
-    /// Fade step per output frame (negative = fade out).
-    fade_step: i16,
+    /// Fade volume multiplier in 16.16 fixed-point (0..=FADE_MAX_FP).
+    fade_level: i32,
+    /// Fade step per output frame in 16.16 fixed-point (negative = fade out).
+    fade_step: i32,
 }
 
 impl Channel {
@@ -104,7 +113,7 @@ impl Channel {
             },
             buffer: &[],
             position: 0,
-            fade_level: 256,
+            fade_level: FADE_MAX_FP,
             fade_step: 0,
         }
     }
@@ -170,7 +179,7 @@ impl Mixer {
                 ch.config = config;
                 ch.buffer = &[];
                 ch.position = 0;
-                ch.fade_level = 256;
+                ch.fade_level = FADE_MAX_FP;
                 ch.fade_step = 0;
                 return Ok(ChannelHandle(i as u8));
             }
@@ -247,7 +256,7 @@ impl Mixer {
             ch.fade_level = 0;
             ch.state = ChannelState::Idle;
         } else {
-            ch.fade_step = -(256i16 / frames as i16).max(1);
+            ch.fade_step = -(FADE_MAX_FP / frames as i32);
             ch.state = ChannelState::FadingOut;
         }
         Ok(())
@@ -260,10 +269,10 @@ impl Mixer {
             .get_mut(handle.0 as usize)
             .ok_or(MixerError::InvalidChannel)?;
         if frames == 0 {
-            ch.fade_level = 256;
+            ch.fade_level = FADE_MAX_FP;
         } else {
             ch.fade_level = 0;
-            ch.fade_step = (256i16 / frames as i16).max(1);
+            ch.fade_step = FADE_MAX_FP / frames as i32;
         }
         Ok(())
     }
@@ -304,7 +313,7 @@ impl Mixer {
 
             let vol_l = ch.config.volume_left;
             let vol_r = ch.config.volume_right;
-            let fade = ch.fade_level as i32;
+            let fade = ch.fade_level >> FADE_FP_SHIFT;
 
             // Mix this channel's samples into the output
             let stereo_samples = output.len() / 2;
@@ -346,20 +355,20 @@ impl Mixer {
 
             // Update fade
             if ch.state == ChannelState::FadingOut {
-                let new_fade = ch.fade_level as i16 + ch.fade_step;
+                let new_fade = ch.fade_level + ch.fade_step;
                 if new_fade <= 0 {
                     ch.fade_level = 0;
                     ch.state = ChannelState::Idle;
                 } else {
-                    ch.fade_level = new_fade as u16;
+                    ch.fade_level = new_fade;
                 }
             } else if ch.fade_step > 0 {
-                let new_fade = ch.fade_level as i16 + ch.fade_step;
-                if new_fade >= 256 {
-                    ch.fade_level = 256;
+                let new_fade = ch.fade_level + ch.fade_step;
+                if new_fade >= FADE_MAX_FP {
+                    ch.fade_level = FADE_MAX_FP;
                     ch.fade_step = 0;
                 } else {
-                    ch.fade_level = new_fade as u16;
+                    ch.fade_level = new_fade;
                 }
             }
         }
