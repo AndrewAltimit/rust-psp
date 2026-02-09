@@ -255,10 +255,9 @@ impl CharBuffer {
         match c {
             b'\n' => self.advance_next = true,
             b'\t' => {
-                self.add(b' ');
-                self.add(b' ');
-                self.add(b' ');
-                self.add(b' ');
+                for _ in 0..4 {
+                    self.add(b' ');
+                }
             },
 
             _ => {

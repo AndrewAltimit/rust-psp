@@ -15,6 +15,12 @@ type VramAllocator = SimpleVramAllocator;
 #[derive(Debug)]
 pub struct VramAllocatorInUseError {}
 
+impl core::fmt::Display for VramAllocatorInUseError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("VRAM allocator is already in use")
+    }
+}
+
 /// Errors returned by VRAM allocation operations.
 #[derive(Debug)]
 pub enum VramAllocError {
@@ -24,6 +30,23 @@ pub enum VramAllocError {
     UnsupportedPixelFormat,
     /// Integer overflow computing allocation size.
     Overflow,
+}
+
+impl core::fmt::Display for VramAllocError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::OutOfMemory {
+                requested,
+                available,
+            } => write!(
+                f,
+                "out of VRAM: requested {} bytes, {} available",
+                requested, available
+            ),
+            Self::UnsupportedPixelFormat => f.write_str("unsupported texture pixel format"),
+            Self::Overflow => f.write_str("integer overflow computing allocation size"),
+        }
+    }
 }
 
 /// Atomic guard ensuring only one VRAM allocator instance exists at a time.

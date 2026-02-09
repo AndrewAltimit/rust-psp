@@ -46,7 +46,7 @@ struct Args {
     output: Option<PathBuf>,
 }
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::parse();
     let bin = fs::read(&args.input)
         .with_context(|| format!("failed to read PRX: {}", args.input.display()))?;
@@ -261,11 +261,4 @@ fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() {
-    if let Err(e) = run() {
-        eprintln!("error: {e:#}");
-        std::process::exit(1);
-    }
 }

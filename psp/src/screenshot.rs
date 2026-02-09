@@ -112,6 +112,11 @@ fn rgba4444_to_bgra(rgba4444: u16) -> u32 {
         | (((rgba4444 & 0xf000) << 12) * 0x100 / 0x10)
 }
 
+/// Read a pixel value at (x, y) from the display buffer.
+unsafe fn read_pixel<T: Copy>(top_addr: *mut c_void, x: u32, y: u32, buffer_width: usize) -> T {
+    unsafe { *(top_addr as *mut T).add(x as usize + y as usize * buffer_width) }
+}
+
 /// Take a screenshot, returning a raw ARGB (big-endian) array.
 pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
     let mut screenshot_buffer = alloc::vec![0; NUM_PIXELS];
@@ -142,37 +147,20 @@ pub fn screenshot_argb_be() -> alloc::vec::Vec<u32> {
     for x in 0..SCREEN_WIDTH {
         for y in 0..SCREEN_HEIGHT {
             // BGRA is reversed ARGB. We do this for little-endian based copying.
+            // SAFETY: top_addr points to the display framebuffer obtained from
+            // sceDisplayGetFrameBuf, and (x, y) are within SCREEN_WIDTH x SCREEN_HEIGHT.
             let bgra = match pixel_format {
                 sys::DisplayPixelFormat::Psm8888 => {
-                    let rgba = unsafe {
-                        *(top_addr as *mut u32).add(x as usize + y as usize * buffer_width)
-                    };
-
-                    rgba_to_bgra(rgba)
+                    rgba_to_bgra(unsafe { read_pixel(top_addr, x, y, buffer_width) })
                 },
-
                 sys::DisplayPixelFormat::Psm5650 => {
-                    let rgb565 = unsafe {
-                        *(top_addr as *mut u16).add(x as usize + y as usize * buffer_width)
-                    };
-
-                    rgb565_to_bgra(rgb565)
+                    rgb565_to_bgra(unsafe { read_pixel(top_addr, x, y, buffer_width) })
                 },
-
                 sys::DisplayPixelFormat::Psm5551 => {
-                    let rgba5551 = unsafe {
-                        *(top_addr as *mut u16).add(x as usize + y as usize * buffer_width)
-                    };
-
-                    rgba5551_to_bgra(rgba5551)
+                    rgba5551_to_bgra(unsafe { read_pixel(top_addr, x, y, buffer_width) })
                 },
-
                 sys::DisplayPixelFormat::Psm4444 => {
-                    let rgba4444 = unsafe {
-                        *(top_addr as *mut u16).add(x as usize + y as usize * buffer_width)
-                    };
-
-                    rgba4444_to_bgra(rgba4444)
+                    rgba4444_to_bgra(unsafe { read_pixel(top_addr, x, y, buffer_width) })
                 },
             };
 
