@@ -454,6 +454,7 @@ pub struct FontRenderer<'a> {
     atlas: GlyphAtlas,
     batch: crate::gu_ext::SpriteBatch,
     font_size: f32,
+    max_ascender: f32,
     staging: Vec<u8>,
 }
 
@@ -484,21 +485,32 @@ impl<'a> FontRenderer<'a> {
     /// (allocated via `vram_alloc`). `font_size` is used for scaling
     /// (currently informational — PSP system fonts have fixed pixel sizes).
     pub fn new(font: &'a Font, atlas_vram: *mut u8, font_size: f32) -> Self {
+        let max_ascender = font
+            .info()
+            .map(|i| i.max_glyph_ascender_f)
+            .unwrap_or(font_size * 0.8);
         Self {
             font,
             atlas: GlyphAtlas::new(atlas_vram, ATLAS_WIDTH, ATLAS_HEIGHT),
             batch: crate::gu_ext::SpriteBatch::new(256),
             font_size,
+            max_ascender,
             staging: alloc::vec![0u8; MAX_STAGING_SIZE],
         }
     }
 
     /// Queue text for drawing at `(x, y)` with the given color (ABGR).
     ///
+    /// `y` is the **top** of the text line (not the baseline). The
+    /// renderer adds the font's max ascender internally to derive the
+    /// baseline, so callers can position text with simple top-left
+    /// coordinates.
+    ///
     /// Renders glyphs to the atlas on cache miss. Characters that fail
     /// to render are silently skipped.
     pub fn draw_text(&mut self, x: f32, y: f32, color: u32, text: &str) {
         let mut cursor_x = x;
+        let baseline = y + self.max_ascender;
 
         for c in text.chars() {
             if c == ' ' {
@@ -516,7 +528,7 @@ impl<'a> FontRenderer<'a> {
             // Check cache first.
             if let Some(cached) = self.atlas.find_cached(char_code) {
                 let gx = cursor_x + cached.metrics.bearing_x;
-                let gy = y - cached.metrics.bearing_y;
+                let gy = baseline - cached.metrics.bearing_y;
                 let u0 = cached.atlas_x as f32;
                 let v0 = cached.atlas_y as f32;
                 let u1 = (cached.atlas_x + cached.atlas_w) as f32;
@@ -586,7 +598,7 @@ impl<'a> FontRenderer<'a> {
                 gw,
             ) {
                 let gx = cursor_x + cached.metrics.bearing_x;
-                let gy = y - cached.metrics.bearing_y;
+                let gy = baseline - cached.metrics.bearing_y;
                 let u0 = cached.atlas_x as f32;
                 let v0 = cached.atlas_y as f32;
                 let u1 = (cached.atlas_x + cached.atlas_w) as f32;

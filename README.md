@@ -188,6 +188,49 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | `thread-sync` | `psp::thread`, `psp::sync` | Spawn threads sharing a SpinMutex counter |
 | `timer-alarm` | `psp::timer` | One-shot alarm and virtual timer |
 
+## Projects Using rust-psp
+
+### OASIS_OS
+
+**[github.com/AndrewAltimit/oasis-os](https://github.com/AndrewAltimit/oasis-os)** -- An embeddable operating system framework in Rust with a skinnable shell, scene-graph UI, command interpreter, virtual file system, and plugin system. Renders to any pixel buffer at 480x272 native resolution across desktop (SDL2), Unreal Engine 5 (FFI), and PSP backends.
+
+The PSP backend (`crates/oasis-backend-psp/`) is a comprehensive example of this SDK in production, demonstrating:
+
+| SDK Module | Usage |
+|-----------|-------|
+| `psp::input` | Edge-detected controller input (press/release/analog) driving a windowed desktop UI |
+| `psp::font` | System TrueType font rendering via `FontLib` + `FontRenderer` with VRAM glyph atlas |
+| `psp::gu_ext` | `SpriteBatch` for batched 2D sprite rendering (text, UI chrome, icons) |
+| `psp::audio` | Background-thread MP3 playback via `AudioChannel` with software mixer |
+| `psp::mp3` | Hardware-accelerated MP3 decoding to PCM with `Mp3Decoder` |
+| `psp::thread` | `psp::thread::spawn()` for dedicated audio and file I/O worker threads |
+| `psp::sync` | `SpscQueue` for lock-free command passing between main and worker threads |
+| `psp::io` | File I/O on Memory Stick (`ms0:/`) for config, save data, and media browsing |
+| `psp::config` | Persistent key-value settings via binary RCFG format |
+| `psp::net` | WiFi AP connection and TCP sockets for remote terminal access |
+| `psp::http` | HTTP client for network requests |
+| `psp::osk` | On-screen keyboard for terminal command input |
+| `psp::dialog` | System confirmation/error dialogs |
+| `psp::power` | CPU/bus clock control (222/266/333 MHz profiles), battery monitoring, power callbacks |
+| `psp::rtc` | Real-time clock for status bar time display |
+| `psp::image` | Hardware JPEG decoding for photo viewer |
+| `psp::screenshot` | Framebuffer capture to BMP |
+| `psp::usb` | USB mass storage mode (RAII) for file transfer |
+| `psp::cache` | `UncachedPtr` for GE-visible texture and font atlas memory |
+| `psp::dma` | DMA texture uploads to VRAM |
+| `psp::me` | Media Engine offloading for background computation |
+| `psp::time` | `FrameTimer` for frame rate measurement and delta time |
+| `psp::wlan` | WLAN status monitoring for network indicator |
+| `psp::savedata` | System save/load dialog integration |
+| `module_kernel!()` | Kernel mode for volatile memory, exception handlers, and ME access |
+
+Build with `std` + `kernel` features:
+
+```bash
+cd crates/oasis-backend-psp
+RUST_PSP_BUILD_STD=1 cargo +nightly psp --release
+```
+
 ## Kernel Mode
 
 Kernel mode unlocks privileged PSP APIs for custom firmware homebrew. Enable it by adding the `kernel` feature and using `module_kernel!()`:

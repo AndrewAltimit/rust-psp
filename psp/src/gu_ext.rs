@@ -162,29 +162,42 @@ impl SpriteBatch {
 
     /// Submit all queued sprites to the GU and clear the batch.
     ///
+    /// Vertex data is copied into display-list memory (via `sceGuGetMemory`)
+    /// so it remains valid until `sceGuFinish`, regardless of when this
+    /// `SpriteBatch` is dropped.
+    ///
     /// # Safety
     ///
     /// Must be called within an active GU display list with an appropriate
     /// texture bound (for textured sprites).
     pub unsafe fn flush(&mut self) {
-        use crate::sys::{GuPrimitive, sceGuDrawArray, sceKernelDcacheWritebackRange};
+        use crate::sys::{GuPrimitive, sceGuDrawArray, sceGuGetMemory};
         use core::ffi::c_void;
 
         if self.vertices.is_empty() {
             return;
         }
         unsafe {
-            // Flush the CPU data cache so the GE can see the vertex data.
-            sceKernelDcacheWritebackRange(
-                self.vertices.as_ptr() as *const c_void,
-                (self.vertices.len() * core::mem::size_of::<SpriteVertex>()) as u32,
-            );
+            let count = self.vertices.len();
+            let byte_size = count * core::mem::size_of::<SpriteVertex>();
+
+            // Allocate from the display list so the GE can safely read the
+            // vertex data even after this SpriteBatch is dropped.
+            let dl_verts = sceGuGetMemory(byte_size as i32) as *mut SpriteVertex;
+            if dl_verts.is_null() {
+                self.vertices.clear();
+                return;
+            }
+
+            // Copy vertices into display-list memory.
+            core::ptr::copy_nonoverlapping(self.vertices.as_ptr(), dl_verts, count);
+
             sceGuDrawArray(
                 GuPrimitive::Sprites,
                 SPRITE_VERTEX_TYPE,
-                self.vertices.len() as i32,
+                count as i32,
                 core::ptr::null::<c_void>(),
-                self.vertices.as_ptr() as *const c_void,
+                dl_verts as *const c_void,
             );
         }
         self.vertices.clear();

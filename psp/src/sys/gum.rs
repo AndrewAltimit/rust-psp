@@ -85,11 +85,8 @@ static mut STACK_DEPTH: [*mut ScePspFMatrix4; 4] = unsafe {
 };
 
 static mut VFPU_CONTEXT: Option<Context> = None;
-unsafe fn get_context_unchecked() -> &'static mut Context {
-    match VFPU_CONTEXT.as_mut() {
-        Some(r) => r,
-        None => unreachable!(),
-    }
+unsafe fn get_context() -> &'static mut Context {
+    VFPU_CONTEXT.get_or_insert_with(Context::new)
 }
 
 const EPSILON: f32 = 0.00001;
@@ -152,7 +149,7 @@ pub unsafe extern "C" fn sceGumDrawSpline(
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumFastInverse() {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M000",
@@ -171,7 +168,7 @@ pub unsafe extern "C" fn sceGumFastInverse() {
 pub unsafe extern "C" fn sceGumFullInverse() {
     let mut t = MaybeUninit::uninit();
 
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "sv.q C300,  0({0})",
@@ -207,9 +204,7 @@ pub unsafe extern "C" fn sceGumFullInverse() {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumLoadIdentity() {
-    VFPU_CONTEXT
-        .get_or_insert_with(Context::new)
-        .prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!("vmidt.q M300", options(nostack, nomem),);
 
@@ -224,9 +219,7 @@ pub unsafe extern "C" fn sceGumLoadIdentity() {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumLoadMatrix(m: &ScePspFMatrix4) {
-    VFPU_CONTEXT
-        .get_or_insert_with(Context::new)
-        .prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!(
         "lv.q C300,  0({0})",
@@ -250,7 +243,7 @@ pub unsafe extern "C" fn sceGumLookAt(
     let mut t = gum_load_identity();
     gum_look_at(&mut t, eye, center, up);
 
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "lv.q C000,  0({0})",
@@ -274,7 +267,7 @@ pub unsafe extern "C" fn sceGumLookAt(
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumMatrixMode(mode: MatrixMode) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!(
         "sv.q C300,  0({0})",
@@ -309,7 +302,7 @@ pub unsafe extern "C" fn sceGumMatrixMode(mode: MatrixMode) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumMultMatrix(m: &ScePspFMatrix4) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "lv.q C000,  0({0})",
@@ -340,7 +333,7 @@ pub unsafe extern "C" fn sceGumOrtho(
     near: f32,
     far: f32,
 ) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M100",                         // set M100 to identity
@@ -390,7 +383,7 @@ pub unsafe extern "C" fn sceGumOrtho(
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumPerspective(fovy: f32, aspect: f32, near: f32, far: f32) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmzero.q M100",                   // set M100 to all zeros
@@ -441,7 +434,7 @@ pub unsafe extern "C" fn sceGumPerspective(fovy: f32, aspect: f32, near: f32, fa
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumPopMatrix() {
     CURRENT_MATRIX = CURRENT_MATRIX.offset(-1);
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!(
         "lv.q C300,  0({0})",
@@ -460,7 +453,7 @@ pub unsafe extern "C" fn sceGumPopMatrix() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumPushMatrix() {
     CURRENT_MATRIX = CURRENT_MATRIX.offset(1);
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!(
         "sv.q C300,  0({0})",
@@ -480,7 +473,7 @@ pub unsafe extern "C" fn sceGumPushMatrix() {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumRotateX(angle: f32) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M000",
@@ -506,7 +499,7 @@ pub unsafe extern "C" fn sceGumRotateX(angle: f32) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumRotateY(angle: f32) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M000",
@@ -532,7 +525,7 @@ pub unsafe extern "C" fn sceGumRotateY(angle: f32) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumRotateZ(angle: f32) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M000",
@@ -584,7 +577,7 @@ pub unsafe extern "C" fn sceGumRotateZYX(v: &ScePspFVector3) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumScale(v: &ScePspFVector3) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0);
 
     vfpu_asm!(
         "lv.q C000, {}",
@@ -606,7 +599,7 @@ pub unsafe extern "C" fn sceGumScale(v: &ScePspFVector3) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumStoreMatrix(m: &mut ScePspFMatrix4) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0);
 
     vfpu_asm!(
         "sv.q C300,  0({0})",
@@ -626,7 +619,7 @@ pub unsafe extern "C" fn sceGumStoreMatrix(m: &mut ScePspFMatrix4) {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumTranslate(v: &ScePspFVector3) {
-    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
+    get_context().prepare(MatrixSet::VMAT3, MatrixSet::VMAT0 | MatrixSet::VMAT1);
 
     vfpu_asm!(
         "vmidt.q M000",
@@ -648,7 +641,7 @@ pub unsafe extern "C" fn sceGumUpdateMatrix() {
     STACK_DEPTH[CURRENT_MODE as usize] = CURRENT_MATRIX;
 
     if CURRENT_MATRIX_UPDATE != 0 {
-        get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
+        get_context().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
         vfpu_asm!(
             "sv.q C300,  0({0})",
@@ -747,7 +740,7 @@ unsafe fn gum_look_at(
 }
 
 unsafe fn gum_translate(m: &mut ScePspFMatrix4, v: &ScePspFVector3) {
-    get_context_unchecked().prepare(
+    get_context().prepare(
         MatrixSet::empty(),
         MatrixSet::VMAT0 | MatrixSet::VMAT1 | MatrixSet::VMAT2,
     );
@@ -775,7 +768,7 @@ unsafe fn gum_translate(m: &mut ScePspFMatrix4, v: &ScePspFVector3) {
 }
 
 unsafe fn gum_load_identity() -> ScePspFMatrix4 {
-    get_context_unchecked().prepare(MatrixSet::empty(), MatrixSet::VMAT0);
+    get_context().prepare(MatrixSet::empty(), MatrixSet::VMAT0);
 
     let mut out = MaybeUninit::uninit();
 
@@ -793,7 +786,7 @@ unsafe fn gum_load_identity() -> ScePspFMatrix4 {
 }
 
 unsafe fn gum_fast_inverse(a: &ScePspFMatrix4) -> ScePspFMatrix4 {
-    get_context_unchecked().prepare(
+    get_context().prepare(
         MatrixSet::empty(),
         MatrixSet::VMAT0 | MatrixSet::VMAT1 | MatrixSet::VMAT2,
     );
@@ -825,7 +818,7 @@ unsafe fn gum_fast_inverse(a: &ScePspFMatrix4) -> ScePspFMatrix4 {
 }
 
 unsafe fn gum_mult_matrix(a: &ScePspFMatrix4, b: &ScePspFMatrix4) -> ScePspFMatrix4 {
-    get_context_unchecked().prepare(
+    get_context().prepare(
         MatrixSet::empty(),
         MatrixSet::VMAT0 | MatrixSet::VMAT1 | MatrixSet::VMAT2,
     );
