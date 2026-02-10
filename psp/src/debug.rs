@@ -4,10 +4,10 @@
 //!
 //! Thread-safe: access to the character buffer is protected by a spinlock.
 
+use crate::sync::SpinMutex;
 use crate::sys;
-use core::cell::UnsafeCell;
 use core::fmt;
-use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 /// Like `println!`, but prints to the PSP screen.
 #[macro_export]
@@ -27,67 +27,6 @@ macro_rules! dprint {
     ($($arg:tt)*) => {{
         $crate::debug::print_args(core::format_args!($($arg)*))
     }}
-}
-
-/// A simple spinlock for single-core environments (PSP MIPS R4000).
-///
-/// Uses `AtomicBool` with acquire/release ordering. On the single-core PSP
-/// this prevents compiler reordering; on multi-core it would provide proper
-/// synchronization too.
-struct SpinMutex<T> {
-    locked: AtomicBool,
-    data: UnsafeCell<T>,
-}
-
-// SAFETY: SpinMutex provides exclusive access via the atomic lock.
-// PSP is single-core, so the spinlock prevents re-entrant access from
-// interrupt handlers or coroutines that might call dprintln!.
-unsafe impl<T: Send> Sync for SpinMutex<T> {}
-unsafe impl<T: Send> Send for SpinMutex<T> {}
-
-impl<T> SpinMutex<T> {
-    const fn new(val: T) -> Self {
-        Self {
-            locked: AtomicBool::new(false),
-            data: UnsafeCell::new(val),
-        }
-    }
-
-    fn lock(&self) -> SpinGuard<'_, T> {
-        while self
-            .locked
-            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-        SpinGuard { mutex: self }
-    }
-}
-
-struct SpinGuard<'a, T> {
-    mutex: &'a SpinMutex<T>,
-}
-
-impl<T> core::ops::Deref for SpinGuard<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        // SAFETY: We hold the lock.
-        unsafe { &*self.mutex.data.get() }
-    }
-}
-
-impl<T> core::ops::DerefMut for SpinGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        // SAFETY: We hold the lock exclusively.
-        unsafe { &mut *self.mutex.data.get() }
-    }
-}
-
-impl<T> Drop for SpinGuard<'_, T> {
-    fn drop(&mut self) {
-        self.mutex.locked.store(false, Ordering::Release);
-    }
 }
 
 static CHARS: SpinMutex<CharBuffer> = SpinMutex::new(CharBuffer::new());

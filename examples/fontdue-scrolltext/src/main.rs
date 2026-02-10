@@ -29,7 +29,7 @@ const BUF_WIDTH: usize = 64;
 const BUF_HEIGHT: usize = 64;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     // Set up buffers
     let mut allocator = get_vram_allocator().unwrap();

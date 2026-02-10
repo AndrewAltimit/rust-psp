@@ -291,7 +291,7 @@ fn psp_main() {
 }
 
 unsafe fn psp_main_inner() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     let allocator = get_vram_allocator().unwrap();
     let fbp0 = allocator

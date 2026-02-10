@@ -10,7 +10,7 @@
 psp::module_kernel!("KernelDemo", 1, 0);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     // Demonstrate kernel-only features
     unsafe {

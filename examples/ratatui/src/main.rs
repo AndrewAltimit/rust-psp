@@ -15,7 +15,7 @@ use psp::embedded_graphics::Framebuffer;
 psp::module!("ratatui_example", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     let mut disp = Framebuffer::new();
 
     let backend = EmbeddedBackend::new(&mut disp, EmbeddedBackendConfig::default());

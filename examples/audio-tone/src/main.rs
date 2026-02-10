@@ -2,12 +2,9 @@
 #![no_main]
 
 use core::f32::consts::PI;
-use core::ffi::c_void;
 
-use psp::sys::{
-    AUDIO_NEXT_CHANNEL, AUDIO_VOLUME_MAX, AudioFormat, audio_sample_align, sceAudioChRelease,
-    sceAudioChReserve, sceAudioOutputBlocking,
-};
+use psp::audio::{AudioChannel, AudioFormat};
+use psp::sys::AUDIO_VOLUME_MAX;
 
 psp::module!("audio_tone_example", 1, 1);
 
@@ -17,31 +14,24 @@ const SAMPLE_COUNT: i32 = 1024;
 const PLAY_SECONDS: u32 = 3;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
-    // Reserve an audio channel (stereo, 1024 samples per buffer).
-    let channel = unsafe {
-        sceAudioChReserve(
-            AUDIO_NEXT_CHANNEL,
-            audio_sample_align(SAMPLE_COUNT),
-            AudioFormat::Stereo,
-        )
+    let channel = match AudioChannel::reserve(SAMPLE_COUNT, AudioFormat::Stereo) {
+        Ok(ch) => ch,
+        Err(e) => {
+            psp::dprintln!("Failed to reserve audio channel: {:?}", e);
+            return;
+        },
     };
-
-    if channel < 0 {
-        psp::dprintln!("Failed to reserve audio channel: {}", channel);
-        return;
-    }
 
     psp::dprintln!(
         "Playing {}Hz tone for {}s on channel {}",
         TONE_HZ,
         PLAY_SECONDS,
-        channel
+        channel.channel_id()
     );
 
-    // Generate and play sine wave buffers.
-    let aligned_count = audio_sample_align(SAMPLE_COUNT) as usize;
+    let aligned_count = channel.sample_count() as usize;
     let mut buf = [0i16; 2048]; // stereo pairs: 1024 * 2
     let mut phase: f32 = 0.0;
     let phase_inc = 2.0 * PI * TONE_HZ / SAMPLE_RATE;
@@ -58,15 +48,12 @@ fn psp_main() {
             }
         }
 
-        unsafe {
-            sceAudioOutputBlocking(
-                channel,
-                AUDIO_VOLUME_MAX as i32,
-                buf.as_mut_ptr() as *mut c_void,
-            );
+        if let Err(e) = channel.output_blocking(AUDIO_VOLUME_MAX as i32, &buf) {
+            psp::dprintln!("Audio output error: {:?}", e);
+            return;
         }
     }
 
-    unsafe { sceAudioChRelease(channel) };
+    // Channel is released on drop
     psp::dprintln!("Audio playback complete");
 }

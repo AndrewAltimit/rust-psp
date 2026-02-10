@@ -9,7 +9,7 @@ psp::module!("sample_module", 1, 1);
 static mut VRAM: *mut u32 = 0x4000_0000 as *mut u32;
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
     unsafe {
         sys::sceDisplaySetMode(
             sys::DisplayMode::Lcd,

@@ -529,9 +529,15 @@ fn main() -> Result<()> {
         .arg(build_std_flag)
         .arg("--target")
         .arg(&target_arg)
-        .arg("--message-format=json-render-diagnostics")
-        .args(args)
-        .stdout(Stdio::piped());
+        .arg("--message-format=json-render-diagnostics");
+
+    // Newer nightlies (post Jan 2026) destabilized custom JSON target specs
+    // and require -Zjson-target-spec when using a .json target path.
+    if build_std {
+        build_cmd.arg("-Z").arg("json-target-spec");
+    }
+
+    build_cmd.args(args).stdout(Stdio::piped());
 
     if build_std {
         // __CARGO_TESTS_ONLY_SRC_ROOT must point to the workspace root

@@ -4,20 +4,21 @@
 psp::module!("sample_clock_speed", 1, 1);
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
-    unsafe {
-        let cpu = psp::sys::scePowerGetCpuClockFrequency();
-        let bus = psp::sys::scePowerGetBusClockFrequency();
+    let clock = psp::power::get_clock();
+    psp::dprintln!("PSP is operating at {}/{}MHz", clock.cpu_mhz, clock.bus_mhz);
+    psp::dprintln!("Setting clock speed to maximum...");
 
-        psp::dprintln!("PSP is operating at {}/{}MHz", cpu, bus);
-        psp::dprintln!("Setting clock speed to maximum...");
-
-        psp::sys::scePowerSetClockFrequency(333, 333, 166);
-
-        let cpu = psp::sys::scePowerGetCpuClockFrequency();
-        let bus = psp::sys::scePowerGetBusClockFrequency();
-
-        psp::dprintln!("PSP is now operating at {}/{}MHz", cpu, bus);
+    match psp::power::set_clock_frequency(333, 166, 333) {
+        Ok(()) => {
+            let clock = psp::power::get_clock();
+            psp::dprintln!(
+                "PSP is now operating at {}/{}MHz",
+                clock.cpu_mhz,
+                clock.bus_mhz
+            );
+        },
+        Err(e) => psp::dprintln!("Failed to set clock: {:?}", e),
     }
 }

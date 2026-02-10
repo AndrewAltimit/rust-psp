@@ -3,9 +3,7 @@
 
 use psp::sys::{
     self, DepthFunc, DisplayPixelFormat, FrontFaceDirection, GuContextType, GuState,
-    GuSyncBehavior, GuSyncMode, ShadingModel, SystemParamLanguage, UtilityDialogButtonAccept,
-    UtilityDialogCommon, UtilityMsgDialogMode, UtilityMsgDialogOption, UtilityMsgDialogParams,
-    UtilityMsgDialogPressed,
+    GuSyncBehavior, GuSyncMode, ShadingModel,
 };
 
 use core::ffi::c_void;
@@ -49,58 +47,17 @@ unsafe fn setup_gu() {
 }
 
 fn psp_main() {
-    psp::enable_home_button();
+    psp::callback::setup_exit_callback().unwrap();
 
     unsafe {
         setup_gu();
     }
 
-    let dialog_size = core::mem::size_of::<UtilityMsgDialogParams>();
-    let base = UtilityDialogCommon {
-        size: dialog_size as u32,
-        language: SystemParamLanguage::English,
-        button_accept: UtilityDialogButtonAccept::Cross, // X to accept
-        graphics_thread: 0x11,                           // magic number stolen from pspsdk example
-        access_thread: 0x13,
-        font_thread: 0x12,
-        sound_thread: 0x10,
-        result: 0,
-        reserved: [0i32; 4],
-    };
-
-    let mut msg: [u8; 512] = [0u8; 512];
-    msg[..40].copy_from_slice(b"Hello from a Rust-created PSP Msg Dialog");
-
-    let mut msg_dialog = UtilityMsgDialogParams {
-        base,
-        unknown: 0,
-        mode: UtilityMsgDialogMode::Text,
-        error_value: 0,
-        message: msg,
-        options: UtilityMsgDialogOption::TEXT,
-        button_pressed: UtilityMsgDialogPressed::Unknown1,
-    };
-
-    unsafe {
-        sys::sceUtilityMsgDialogInitStart(&mut msg_dialog as *mut UtilityMsgDialogParams);
+    match psp::dialog::message_dialog("Hello from a Rust-created PSP Msg Dialog") {
+        Ok(result) => psp::dprintln!("Dialog result: {:?}", result),
+        Err(e) => psp::dprintln!("Dialog error: {:?}", e),
     }
 
-    loop {
-        let status = unsafe { sys::sceUtilityMsgDialogGetStatus() };
-        match status {
-            2 => unsafe { sys::sceUtilityMsgDialogUpdate(1) },
-            3 => unsafe { sys::sceUtilityMsgDialogShutdownStart() },
-            0 => break,
-            _ => (),
-        }
-        unsafe {
-            sys::sceGuStart(GuContextType::Direct, &raw mut LIST as *mut c_void);
-            sys::sceGuFinish();
-            sys::sceGuSync(GuSyncMode::Finish, sys::GuSyncBehavior::Wait);
-            sys::sceDisplayWaitVblankStart();
-            sys::sceGuSwapBuffers();
-        }
-    }
     unsafe {
         sys::sceKernelExitGame();
     }

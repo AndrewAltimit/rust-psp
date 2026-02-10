@@ -498,6 +498,54 @@ psp_extern! {
     ) -> i32;
 }
 
+psp_extern! {
+    #![name = "sceDmac"]
+    #![flags = 0x4001]
+    #![version = (0x00, 0x00)]
+
+    #[psp(0x617F3FE6)]
+    /// Perform a DMA memory copy (blocking).
+    ///
+    /// Copies `size` bytes from `src` to `dst` using the DMA controller.
+    /// This call blocks until the transfer is complete.
+    ///
+    /// # Parameters
+    ///
+    /// - `dst`: Destination address.
+    /// - `src`: Source address.
+    /// - `size`: Number of bytes to copy.
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error.
+    pub fn sceDmacMemcpy(
+        dst: *mut c_void,
+        src: *const c_void,
+        size: u32,
+    ) -> i32;
+
+    #[psp(0xD97F94D8)]
+    /// Try to perform a DMA memory copy (non-blocking attempt).
+    ///
+    /// Like `sceDmacMemcpy`, but returns immediately with an error if
+    /// the DMA controller is busy.
+    ///
+    /// # Parameters
+    ///
+    /// - `dst`: Destination address.
+    /// - `src`: Source address.
+    /// - `size`: Number of bytes to copy.
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error (including busy).
+    pub fn sceDmacTryMemcpy(
+        dst: *mut c_void,
+        src: *const c_void,
+        size: u32,
+    ) -> i32;
+}
+
 #[repr(packed, C)]
 pub struct IntrHandlerOptionParam {
     size: i32,           //+00

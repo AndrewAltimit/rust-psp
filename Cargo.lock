@@ -469,6 +469,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-config-save-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-cube-example"
 version = "0.1.0"
 dependencies = [
@@ -513,7 +520,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-http-client-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-input-analog-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-msg-dialog"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-net-http-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-osk-input-example"
 version = "0.1.0"
 dependencies = [
  "psp",
@@ -546,6 +581,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-rtc-sysinfo-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-savedata-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-screenshot-example"
 version = "0.1.0"
 dependencies = [
@@ -553,7 +602,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "psp-system-font-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-thread-sync-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
 name = "psp-time-example"
+version = "0.1.0"
+dependencies = [
+ "psp",
+]
+
+[[package]]
+name = "psp-timer-alarm-example"
 version = "0.1.0"
 dependencies = [
  "psp",
