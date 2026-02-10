@@ -86,10 +86,7 @@ static mut STACK_DEPTH: [*mut ScePspFMatrix4; 4] = unsafe {
 
 static mut VFPU_CONTEXT: Option<Context> = None;
 unsafe fn get_context_unchecked() -> &'static mut Context {
-    match VFPU_CONTEXT.as_mut() {
-        Some(r) => r,
-        None => unreachable!(),
-    }
+    VFPU_CONTEXT.get_or_insert_with(Context::new)
 }
 
 const EPSILON: f32 = 0.00001;
