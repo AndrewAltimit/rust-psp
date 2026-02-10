@@ -214,6 +214,10 @@ impl Mixer {
         handle: ChannelHandle,
         samples: &'static [i16],
     ) -> Result<(), MixerError> {
+        // Buffer must have an even number of elements (interleaved stereo pairs).
+        if samples.len() % 2 != 0 {
+            return Err(MixerError::AudioError(-1));
+        }
         let mut channels = self.channels.lock();
         let ch = channels
             .get_mut(handle.0 as usize)
