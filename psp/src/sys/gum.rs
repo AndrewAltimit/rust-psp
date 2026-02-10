@@ -204,9 +204,7 @@ pub unsafe extern "C" fn sceGumFullInverse() {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumLoadIdentity() {
-    VFPU_CONTEXT
-        .get_or_insert_with(Context::new)
-        .prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!("vmidt.q M300", options(nostack, nomem),);
 
@@ -221,9 +219,7 @@ pub unsafe extern "C" fn sceGumLoadIdentity() {
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sceGumLoadMatrix(m: &ScePspFMatrix4) {
-    VFPU_CONTEXT
-        .get_or_insert_with(Context::new)
-        .prepare(MatrixSet::VMAT3, MatrixSet::empty());
+    get_context_unchecked().prepare(MatrixSet::VMAT3, MatrixSet::empty());
 
     vfpu_asm!(
         "lv.q C300,  0({0})",
