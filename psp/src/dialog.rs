@@ -117,8 +117,12 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
         }
 
         match status {
-            2 => unsafe { crate::sys::sceUtilityMsgDialogUpdate(1); },
-            3 => unsafe { crate::sys::sceUtilityMsgDialogShutdownStart(); },
+            2 => unsafe {
+                crate::sys::sceUtilityMsgDialogUpdate(1);
+            },
+            3 => unsafe {
+                crate::sys::sceUtilityMsgDialogShutdownStart();
+            },
             _ => {},
         }
 

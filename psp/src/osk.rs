@@ -184,8 +184,12 @@ impl OskBuilder {
             }
 
             match status {
-                2 => unsafe { crate::sys::sceUtilityOskUpdate(1); },
-                3 => unsafe { crate::sys::sceUtilityOskShutdownStart(); },
+                2 => unsafe {
+                    crate::sys::sceUtilityOskUpdate(1);
+                },
+                3 => unsafe {
+                    crate::sys::sceUtilityOskShutdownStart();
+                },
                 _ => {},
             }
 

@@ -54,10 +54,10 @@ mod eabi;
 pub mod font;
 pub mod framebuffer;
 pub mod gu_ext;
-#[cfg(not(feature = "stub-only"))]
-pub mod http;
 #[cfg(feature = "kernel")]
 pub mod hook;
+#[cfg(not(feature = "stub-only"))]
+pub mod http;
 #[cfg(feature = "kernel")]
 pub mod hw;
 #[cfg(not(feature = "stub-only"))]
@@ -341,8 +341,7 @@ macro_rules! __module_impl {
                 let thread_attr = if $attr & 0x1000 != 0 {
                     $crate::sys::ThreadAttributes::VFPU
                 } else {
-                    $crate::sys::ThreadAttributes::USER
-                        | $crate::sys::ThreadAttributes::VFPU
+                    $crate::sys::ThreadAttributes::USER | $crate::sys::ThreadAttributes::VFPU
                 };
 
                 unsafe {
