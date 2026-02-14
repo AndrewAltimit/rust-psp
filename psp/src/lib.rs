@@ -334,13 +334,24 @@ macro_rules! __module_impl {
                     $crate::_start!(super::psp_main, argc, argv)
                 }
 
+                // Kernel modules (attr & 0x1000) must create kernel threads.
+                // Using USER (0x80000000) in a kernel PRX causes crashes
+                // because the thread drops to user mode and can't call kernel
+                // APIs like sctrlHEN*.
+                let thread_attr = if $attr & 0x1000 != 0 {
+                    $crate::sys::ThreadAttributes::VFPU
+                } else {
+                    $crate::sys::ThreadAttributes::USER
+                        | $crate::sys::ThreadAttributes::VFPU
+                };
+
                 unsafe {
                     let id = $crate::sys::sceKernelCreateThread(
                         b"main_thread\0".as_ptr(),
                         main_thread,
                         $crate::DEFAULT_THREAD_PRIORITY,
                         $crate::DEFAULT_MAIN_STACK_SIZE,
-                        $crate::sys::ThreadAttributes::USER | $crate::sys::ThreadAttributes::VFPU,
+                        thread_attr,
                         core::ptr::null_mut(),
                     );
 

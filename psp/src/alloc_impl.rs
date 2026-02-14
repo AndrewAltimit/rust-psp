@@ -43,8 +43,16 @@ unsafe impl GlobalAlloc for SystemAlloc {
             return ptr::null_mut();
         };
 
+        // Use the kernel partition for kernel-mode modules, user
+        // partition otherwise.  The "kernel" feature is only enabled
+        // for kernel PRX crates (module_kernel!).
+        #[cfg(feature = "kernel")]
+        let partition = SceSysMemPartitionId::SceKernelPrimaryKernelPartition;
+        #[cfg(not(feature = "kernel"))]
+        let partition = SceSysMemPartitionId::SceKernelPrimaryUserPartition;
+
         let id = sys::sceKernelAllocPartitionMemory(
-            SceSysMemPartitionId::SceKernelPrimaryUserPartition,
+            partition,
             &b"block\0"[0],
             SceSysMemBlockTypes::Low,
             size as u32,
