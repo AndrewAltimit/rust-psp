@@ -126,6 +126,11 @@ mod codec;
 #[cfg(feature = "kernel")]
 pub use codec::*;
 
+#[cfg(feature = "kernel")]
+mod sctrl;
+#[cfg(feature = "kernel")]
+pub use sctrl::*;
+
 pub mod vfpu_context;
 
 use core::ffi::c_void;

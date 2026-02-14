@@ -57,6 +57,8 @@ pub mod gu_ext;
 #[cfg(not(feature = "stub-only"))]
 pub mod http;
 #[cfg(feature = "kernel")]
+pub mod hook;
+#[cfg(feature = "kernel")]
 pub mod hw;
 #[cfg(not(feature = "stub-only"))]
 pub mod image;
