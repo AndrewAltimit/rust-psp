@@ -1,7 +1,10 @@
 //! Audio channel management with RAII for the PSP.
 //!
-//! Provides [`AudioChannel`] for reserving, outputting to, and
-//! automatically releasing PSP hardware audio channels.
+//! Provides [`AudioChannel`] for reserving one of the 8 regular PCM hardware
+//! channels, and [`SrcChannel`] for the global Sample Rate Conversion (SRC)
+//! channel. The SRC channel is a singleton separate from the 8 PCM channels,
+//! making it ideal for background audio in plugins that must not conflict with
+//! game audio.
 //!
 //! # Example
 //!
@@ -190,6 +193,114 @@ impl Drop for AudioChannel {
     fn drop(&mut self) {
         unsafe {
             crate::sys::sceAudioChRelease(self.channel);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SRC (Sample Rate Conversion) channel
+// ---------------------------------------------------------------------------
+
+/// Output frequency for the SRC channel.
+///
+/// Mirrors [`crate::sys::AudioOutputFrequency`] with a more ergonomic API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFrequency {
+    Khz48,
+    Khz44_1,
+    Khz32,
+    Khz24,
+    Khz22_05,
+    Khz16,
+    Khz12,
+    Khz11_025,
+    Khz8,
+}
+
+impl OutputFrequency {
+    fn to_sys(self) -> crate::sys::AudioOutputFrequency {
+        match self {
+            OutputFrequency::Khz48 => crate::sys::AudioOutputFrequency::Khz48,
+            OutputFrequency::Khz44_1 => crate::sys::AudioOutputFrequency::Khz44_1,
+            OutputFrequency::Khz32 => crate::sys::AudioOutputFrequency::Khz32,
+            OutputFrequency::Khz24 => crate::sys::AudioOutputFrequency::Khz24,
+            OutputFrequency::Khz22_05 => crate::sys::AudioOutputFrequency::Khz22_05,
+            OutputFrequency::Khz16 => crate::sys::AudioOutputFrequency::Khz16,
+            OutputFrequency::Khz12 => crate::sys::AudioOutputFrequency::Khz12,
+            OutputFrequency::Khz11_025 => crate::sys::AudioOutputFrequency::Khz11_025,
+            OutputFrequency::Khz8 => crate::sys::AudioOutputFrequency::Khz8,
+        }
+    }
+}
+
+/// An RAII handle to the PSP's global SRC (Sample Rate Conversion) channel.
+///
+/// The SRC channel is a **singleton** — there is only one, separate from the
+/// 8 regular PCM channels. This makes it ideal for background audio in kernel
+/// plugins that must not conflict with game audio channels.
+///
+/// Audio is always stereo (interleaved i16 L/R pairs).
+///
+/// # Example
+///
+/// ```ignore
+/// use psp::audio::{SrcChannel, OutputFrequency};
+///
+/// let src = SrcChannel::reserve(1152, OutputFrequency::Khz44_1).unwrap();
+/// src.output_blocking(0x8000, &pcm_stereo).unwrap();
+/// // Channel is released on drop.
+/// ```
+pub struct SrcChannel {
+    sample_count: i32,
+    _marker: PhantomData<*const ()>, // !Send + !Sync
+}
+
+impl SrcChannel {
+    /// Reserve the global SRC channel.
+    ///
+    /// `sample_count` is the number of stereo sample frames per output call
+    /// (min 17, max 4111). `freq` sets the output sample rate.
+    ///
+    /// Returns an error if the SRC channel is already reserved.
+    pub fn reserve(sample_count: i32, freq: OutputFrequency) -> Result<Self, AudioError> {
+        let ret = unsafe { crate::sys::sceAudioSRCChReserve(sample_count, freq.to_sys(), 2) };
+        if ret < 0 {
+            return Err(AudioError(ret));
+        }
+        Ok(Self {
+            sample_count,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Output stereo PCM audio, blocking until the hardware buffer is free.
+    ///
+    /// `volume` ranges from 0 to 0x8000 (max).
+    /// `buf` must contain at least `sample_count * 2` i16 values (stereo pairs).
+    pub fn output_blocking(&self, volume: i32, buf: &[i16]) -> Result<(), AudioError> {
+        let required = self.sample_count as usize * 2;
+        if buf.len() < required {
+            return Err(AudioError(-1));
+        }
+        let ret =
+            unsafe { crate::sys::sceAudioSRCOutputBlocking(volume, buf.as_ptr() as *mut c_void) };
+        if ret < 0 {
+            Err(AudioError(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Get the number of sample frames per output call.
+    pub fn sample_count(&self) -> i32 {
+        self.sample_count
+    }
+}
+
+impl Drop for SrcChannel {
+    fn drop(&mut self) {
+        unsafe {
+            crate::sys::sceAudioSRCChRelease();
         }
     }
 }

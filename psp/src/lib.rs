@@ -41,6 +41,8 @@ pub mod debug;
 mod vfpu;
 pub mod audio;
 pub mod audio_mixer;
+#[cfg(not(feature = "stub-only"))]
+pub mod audiocodec;
 pub mod cache;
 #[cfg(not(feature = "stub-only"))]
 pub mod callback;

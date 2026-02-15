@@ -121,9 +121,7 @@ mod sircs;
 #[cfg(feature = "kernel")]
 pub use sircs::*;
 
-#[cfg(feature = "kernel")]
 mod codec;
-#[cfg(feature = "kernel")]
 pub use codec::*;
 
 #[cfg(feature = "kernel")]
