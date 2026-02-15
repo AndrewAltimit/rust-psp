@@ -69,12 +69,15 @@ impl Mp3Decoder {
             return Err(Mp3Error(ret));
         }
 
+        // Skip ID3v2 tag so the decoder sees raw MP3 frames.
+        let start_offset = skip_id3v2(data);
+
         let owned_data = Vec::from(data);
         let mut mp3_buf = alloc::vec![0u8; MP3_BUF_SIZE];
         let mut pcm_buf = alloc::vec![0i16; PCM_BUF_SIZE];
 
         let mut init_arg = sys::SceMp3InitArg {
-            mp3_stream_start: 0,
+            mp3_stream_start: start_offset as u32,
             unk1: 0,
             mp3_stream_end: owned_data.len() as u32,
             unk2: 0,
@@ -100,7 +103,13 @@ impl Mp3Decoder {
         };
 
         // Feed initial data.
-        decoder.feed_data()?;
+        if let Err(e) = decoder.feed_data() {
+            unsafe {
+                sys::sceMp3ReleaseMp3Handle(handle);
+                sys::sceMp3TermResource();
+            }
+            return Err(e);
+        }
 
         // Initialize the decoder.
         let ret = unsafe { sys::sceMp3Init(handle) };
@@ -203,8 +212,13 @@ impl Mp3Decoder {
             return Ok(());
         }
 
+        // SAFETY: src_offset and copy_len are bounds-checked above.
         unsafe {
-            core::ptr::copy_nonoverlapping(self._data.as_ptr().add(src_offset), dst_ptr, copy_len);
+            core::ptr::copy_nonoverlapping(
+                self._data.as_ptr().add(src_offset),
+                dst_ptr,
+                copy_len,
+            );
         }
 
         let ret = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, copy_len as i32) };
