@@ -20,6 +20,7 @@
 use crate::sys;
 use alloc::vec::Vec;
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Error from an MP3 operation, wrapping the raw SCE error code.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -64,17 +65,27 @@ impl Mp3Decoder {
     /// Initializes the MP3 resource subsystem, reserves a handle, and
     /// feeds the initial data to the decoder.
     pub fn new(data: &[u8]) -> Result<Self, Mp3Error> {
-        let ret = unsafe { sys::sceMp3InitResource() };
-        if ret < 0 {
-            return Err(Mp3Error(ret));
+        // sceMp3InitResource / sceMp3TermResource are global and must only
+        // be called once for the lifetime of the process.  We init lazily
+        // on first use and never terminate (cleaned up at process exit).
+        static MP3_RES_INIT: AtomicBool = AtomicBool::new(false);
+        if !MP3_RES_INIT.swap(true, Ordering::Relaxed) {
+            let ret = unsafe { sys::sceMp3InitResource() };
+            if ret < 0 {
+                MP3_RES_INIT.store(false, Ordering::Relaxed);
+                return Err(Mp3Error(ret));
+            }
         }
+
+        // Skip ID3v2 tag so the decoder sees raw MP3 frames.
+        let start_offset = skip_id3v2(data);
 
         let owned_data = Vec::from(data);
         let mut mp3_buf = alloc::vec![0u8; MP3_BUF_SIZE];
         let mut pcm_buf = alloc::vec![0i16; PCM_BUF_SIZE];
 
         let mut init_arg = sys::SceMp3InitArg {
-            mp3_stream_start: 0,
+            mp3_stream_start: start_offset as u32,
             unk1: 0,
             mp3_stream_end: owned_data.len() as u32,
             unk2: 0,
@@ -86,7 +97,6 @@ impl Mp3Decoder {
 
         let handle_id = unsafe { sys::sceMp3ReserveMp3Handle(&mut init_arg) };
         if handle_id < 0 {
-            unsafe { sys::sceMp3TermResource() };
             return Err(Mp3Error(handle_id));
         }
         let handle = sys::Mp3Handle(handle_id);
@@ -100,15 +110,15 @@ impl Mp3Decoder {
         };
 
         // Feed initial data.
-        decoder.feed_data()?;
+        if let Err(e) = decoder.feed_data() {
+            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+            return Err(e);
+        }
 
         // Initialize the decoder.
         let ret = unsafe { sys::sceMp3Init(handle) };
         if ret < 0 {
-            unsafe {
-                sys::sceMp3ReleaseMp3Handle(handle);
-                sys::sceMp3TermResource();
-            }
+            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
             return Err(Mp3Error(ret));
         }
 
@@ -203,8 +213,13 @@ impl Mp3Decoder {
             return Ok(());
         }
 
+        // SAFETY: src_offset and copy_len are bounds-checked above.
         unsafe {
-            core::ptr::copy_nonoverlapping(self._data.as_ptr().add(src_offset), dst_ptr, copy_len);
+            core::ptr::copy_nonoverlapping(
+                self._data.as_ptr().add(src_offset),
+                dst_ptr,
+                copy_len,
+            );
         }
 
         let ret = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, copy_len as i32) };
@@ -222,10 +237,9 @@ impl Mp3Decoder {
 
 impl Drop for Mp3Decoder {
     fn drop(&mut self) {
-        unsafe {
-            sys::sceMp3ReleaseMp3Handle(self.handle);
-            sys::sceMp3TermResource();
-        }
+        // Only release the per-stream handle. The global MP3 resource
+        // (sceMp3InitResource) stays alive for future decoder instances.
+        unsafe { sys::sceMp3ReleaseMp3Handle(self.handle) };
     }
 }
 
