@@ -3,6 +3,29 @@
 //! Wraps the hardware-accelerated `sceMp3*` syscalls for decoding MP3
 //! audio data into PCM samples suitable for playback via [`crate::audio`].
 //!
+//! # Stability Warning
+//!
+//! The `sceMp3*` API is **unstable for handle reuse** on real PSP hardware
+//! (tested on PSP-3000 with 6.20 PRO-C CFW). Specifically:
+//!
+//! - Dropping a decoder and creating a new one (Release→Term→Init→Reserve
+//!   cycle) crashes after ~2 songs.
+//! - Using [`Mp3Decoder::reload`] or [`Mp3Decoder::reload_owned`] to reuse
+//!   a handle (ResetPlayPosition + re-feed, no Release/Term) still crashes
+//!   after ~3 songs.
+//! - All variations (with delays, staggered Init/Term, single-Init) exhibit
+//!   the same instability on real hardware. PPSSPP does not reproduce it.
+//!
+//! **For applications that switch between songs, use
+//! [`crate::audiocodec::AudiocodecDecoder`] instead.** The `sceAudiocodec`
+//! API provides frame-by-frame MP3 decoding with a single EDRAM allocation
+//! that can be reused indefinitely. You will need to handle MP3 frame sync
+//! detection yourself — see [`find_sync`] and [`skip_id3v2`] in this module
+//! for helpers.
+//!
+//! The `sceMp3` API works fine for **single-song playback** (e.g., a menu
+//! background track that plays once and never changes).
+//!
 //! # Example
 //!
 //! ```ignore
@@ -41,9 +64,12 @@ impl core::fmt::Display for Mp3Error {
 ///
 /// Decodes MP3 data using the PSP's hardware decoder. The MP3 data is
 /// provided as a byte slice and must remain valid for the decoder's lifetime.
+///
+/// For song switching, use [`reload`](Self::reload) to swap in new data
+/// without releasing the handle (which can crash on real PSP hardware).
 pub struct Mp3Decoder {
     handle: sys::Mp3Handle,
-    /// MP3 source data (kept alive for the duration of decoding).
+    /// MP3 source data (ID3v2 tag already stripped).
     _data: Vec<u8>,
     /// Internal stream buffer used by the MP3 decoder.
     mp3_buf: Vec<u8>,
@@ -58,6 +84,11 @@ const MP3_BUF_SIZE: usize = 8 * 1024;
 /// Size of the internal PCM output buffer (max output per decode call).
 const PCM_BUF_SIZE: usize = 4608; // 1152 samples * 2 channels * 2 bytes (as i16 count)
 
+/// Large sentinel for `mp3_stream_end` so a single handle can be reused
+/// for files of any size.  EOF is signalled by `feed_data` when the
+/// actual source data runs out.
+const STREAM_END_MAX: u32 = 0x0FFF_FFFF; // 256 MiB
+
 impl Mp3Decoder {
     /// Create a decoder from in-memory MP3 data.
     ///
@@ -68,15 +99,25 @@ impl Mp3Decoder {
         if ret < 0 {
             return Err(Mp3Error(ret));
         }
+        Self::create(data).map_err(|e| {
+            unsafe { sys::sceMp3TermResource() };
+            e
+        })
+    }
 
-        let owned_data = Vec::from(data);
+    /// Internal constructor — does not call InitResource or TermResource.
+    fn create(data: &[u8]) -> Result<Self, Mp3Error> {
+        // Strip ID3v2 tag so all offsets are relative to raw MP3 frames.
+        let start_offset = skip_id3v2(data);
+        let owned_data = Vec::from(&data[start_offset..]);
+
         let mut mp3_buf = alloc::vec![0u8; MP3_BUF_SIZE];
         let mut pcm_buf = alloc::vec![0i16; PCM_BUF_SIZE];
 
         let mut init_arg = sys::SceMp3InitArg {
             mp3_stream_start: 0,
             unk1: 0,
-            mp3_stream_end: owned_data.len() as u32,
+            mp3_stream_end: STREAM_END_MAX,
             unk2: 0,
             mp3_buf: mp3_buf.as_mut_ptr() as *mut c_void,
             mp3_buf_size: MP3_BUF_SIZE as i32,
@@ -86,33 +127,66 @@ impl Mp3Decoder {
 
         let handle_id = unsafe { sys::sceMp3ReserveMp3Handle(&mut init_arg) };
         if handle_id < 0 {
-            unsafe { sys::sceMp3TermResource() };
             return Err(Mp3Error(handle_id));
         }
         let handle = sys::Mp3Handle(handle_id);
 
-        let mut decoder = Self {
+        // Feed initial data before constructing the struct so that on
+        // error the Vecs drop normally (no mem::forget needed).
+        let eof = match feed_data_raw(handle, &owned_data) {
+            Ok(eof) => eof,
+            Err(e) => {
+                unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+                return Err(e);
+            },
+        };
+
+        // Initialize the decoder (parses first frame header).
+        let ret = unsafe { sys::sceMp3Init(handle) };
+        if ret < 0 {
+            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+            return Err(Mp3Error(ret));
+        }
+
+        Ok(Self {
             handle,
             _data: owned_data,
             mp3_buf,
             pcm_buf,
-            eof: false,
-        };
+            eof,
+        })
+    }
 
-        // Feed initial data.
-        decoder.feed_data()?;
+    /// Reload the decoder with new MP3 data without releasing the handle.
+    ///
+    /// Resets the play position, replaces the source data, and re-feeds
+    /// the decoder. This avoids the Release→Reserve cycle which can crash
+    /// on real PSP hardware.
+    ///
+    /// After reload, metadata accessors (`sample_rate`, `channels`, etc.)
+    /// may return stale values until the first `decode_frame` call.
+    pub fn reload(&mut self, data: &[u8]) -> Result<(), Mp3Error> {
+        self.reset()?;
+        let start_offset = skip_id3v2(data);
+        self._data = Vec::from(&data[start_offset..]);
+        self.eof = false;
+        self.feed_data()?;
+        Ok(())
+    }
 
-        // Initialize the decoder.
-        let ret = unsafe { sys::sceMp3Init(handle) };
-        if ret < 0 {
-            unsafe {
-                sys::sceMp3ReleaseMp3Handle(handle);
-                sys::sceMp3TermResource();
-            }
-            return Err(Mp3Error(ret));
+    /// Like [`reload`](Self::reload) but takes ownership of the data Vec
+    /// to avoid an extra copy. The ID3v2 tag prefix (if any) is drained
+    /// in-place.
+    pub fn reload_owned(&mut self, mut data: Vec<u8>) -> Result<(), Mp3Error> {
+        self.reset()?;
+        let start_offset = skip_id3v2(&data);
+        if start_offset > 0 {
+            data.drain(..start_offset);
         }
-
-        Ok(decoder)
+        self._data = data;
+        self.eof = false;
+        self.feed_data()?;
+        Ok(())
     }
 
     /// Decode the next frame of MP3 data.
@@ -172,52 +246,55 @@ impl Mp3Decoder {
 
     /// Feed data from the source buffer into the decoder's stream buffer.
     fn feed_data(&mut self) -> Result<(), Mp3Error> {
-        let mut dst_ptr: *mut u8 = core::ptr::null_mut();
-        let mut to_write: i32 = 0;
-        let mut src_pos: i32 = 0;
-
-        let ret = unsafe {
-            sys::sceMp3GetInfoToAddStreamData(
-                self.handle,
-                &mut dst_ptr,
-                &mut to_write,
-                &mut src_pos,
-            )
-        };
-        if ret < 0 {
-            return Err(Mp3Error(ret));
-        }
-
-        if to_write <= 0 || dst_ptr.is_null() {
-            self.eof = true;
-            return Ok(());
-        }
-
-        let src_offset = src_pos as usize;
-        let available = self._data.len().saturating_sub(src_offset);
-        let copy_len = (to_write as usize).min(available);
-
-        if copy_len == 0 {
-            self.eof = true;
-            let _ = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, 0) };
-            return Ok(());
-        }
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(self._data.as_ptr().add(src_offset), dst_ptr, copy_len);
-        }
-
-        let ret = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, copy_len as i32) };
-        if ret < 0 {
-            return Err(Mp3Error(ret));
-        }
-
-        if src_offset + copy_len >= self._data.len() {
+        let eof = feed_data_raw(self.handle, &self._data)?;
+        if eof {
             self.eof = true;
         }
-
         Ok(())
     }
+}
+
+/// Feed source data into the decoder's stream buffer.
+///
+/// Returns `Ok(true)` when all data has been fed (EOF), `Ok(false)` otherwise.
+/// This is a free function so it can be called before the `Mp3Decoder` struct
+/// is fully constructed (avoiding `mem::forget` leaks on error paths).
+fn feed_data_raw(handle: sys::Mp3Handle, data: &[u8]) -> Result<bool, Mp3Error> {
+    let mut dst_ptr: *mut u8 = core::ptr::null_mut();
+    let mut to_write: i32 = 0;
+    let mut src_pos: i32 = 0;
+
+    let ret = unsafe {
+        sys::sceMp3GetInfoToAddStreamData(handle, &mut dst_ptr, &mut to_write, &mut src_pos)
+    };
+    if ret < 0 {
+        return Err(Mp3Error(ret));
+    }
+
+    if to_write <= 0 || dst_ptr.is_null() {
+        return Ok(true);
+    }
+
+    let src_offset = src_pos as usize;
+    let available = data.len().saturating_sub(src_offset);
+    let copy_len = (to_write as usize).min(available);
+
+    if copy_len == 0 {
+        let _ = unsafe { sys::sceMp3NotifyAddStreamData(handle, 0) };
+        return Ok(true);
+    }
+
+    // SAFETY: src_offset and copy_len are bounds-checked above.
+    unsafe {
+        core::ptr::copy_nonoverlapping(data.as_ptr().add(src_offset), dst_ptr, copy_len);
+    }
+
+    let ret = unsafe { sys::sceMp3NotifyAddStreamData(handle, copy_len as i32) };
+    if ret < 0 {
+        return Err(Mp3Error(ret));
+    }
+
+    Ok(src_offset + copy_len >= data.len())
 }
 
 impl Drop for Mp3Decoder {
