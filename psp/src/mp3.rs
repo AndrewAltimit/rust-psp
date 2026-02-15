@@ -185,9 +185,18 @@ impl Mp3Decoder {
     /// afterward (e.g. switching songs). The global MP3 resource subsystem
     /// stays initialized so the next `Mp3Decoder::new()` succeeds without
     /// a full Init→Term→Init cycle (which crashes on real PSP hardware).
+    ///
+    /// Heap buffers are freed normally — only `sceMp3TermResource` is skipped.
     pub fn release(self) {
-        unsafe { sys::sceMp3ReleaseMp3Handle(self.handle) };
-        core::mem::forget(self);
+        let mut this = core::mem::ManuallyDrop::new(self);
+        unsafe { sys::sceMp3ReleaseMp3Handle(this.handle) };
+        // Free heap buffers without running Drop (which calls TermResource).
+        // SAFETY: Each field is valid and only dropped once.
+        unsafe {
+            core::ptr::drop_in_place(&mut this._data);
+            core::ptr::drop_in_place(&mut this.mp3_buf);
+            core::ptr::drop_in_place(&mut this.pcm_buf);
+        }
     }
 
     /// Feed data from the source buffer into the decoder's stream buffer.
