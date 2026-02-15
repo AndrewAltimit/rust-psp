@@ -20,7 +20,7 @@ fn psp_main() {
 
 ## API Overview
 
-The `psp` crate provides ~825 syscall bindings covering every major PSP subsystem, plus high-level Rust utilities.
+The `psp` crate provides ~829 syscall bindings covering every major PSP subsystem, plus high-level Rust utilities.
 
 ### Syscall Bindings (`psp::sys`)
 
@@ -28,7 +28,8 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 |--------|-----------|-----------|-------------|
 | Graphics | `gu`, `ge`, `display` | ~150 | GU/GUM 3D rendering, GPU command queue, display mode/vsync |
 | Input | `ctrl` | 12 | Buttons, D-pad, analog stick |
-| Audio | `audio` | 26 | PCM output/input, channel management, volume |
+| Audio | `audio` | 26 | PCM output/input, channel management, SRC channel, volume |
+| Audio Codec | `audiocodec` | 5 | Hardware audio codec (MP3, AAC, ATRAC3, ATRAC3plus) EDRAM decode |
 | ATRAC3 | `atrac` | 23 | Sony ATRAC3/ATRAC3plus codec |
 | MP3 | `mp3` | 17 | MP3 decoder |
 | MPEG | `mpeg`, `psmf` | 79 | MPEG video, PSMF stream decoding |
@@ -49,11 +50,12 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 | OpenPSID | `openpsid` | 1 | Console unique ID |
 | **Kernel-only** | `nand` | 12 | NAND flash read/write/status |
 | **Kernel-only** | `sircs` | 1 | Infrared remote control (SIRCS protocol) |
-| **Kernel-only** | `codec` | 10 | Hardware video/audio codec control |
+| **Kernel-only** | `codec` | 5 | Hardware video codec control (`sceVideocodec*`) |
+| **Kernel-only** | `sctrl` | 2 | SystemCtrlForKernel CFW syscall hooking (`sctrlHEN*`) |
 
 ### Platform SDK
 
-36+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
+38+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
 
 #### System & Lifecycle
 
@@ -94,9 +96,10 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 
 | Module | Key API | Description |
 |--------|---------|-------------|
-| `psp::audio` | `AudioChannel`, `output_blocking()` | RAII audio channels with PCM output |
+| `psp::audio` | `AudioChannel`, `SrcChannel`, `output_blocking()` | RAII audio channels (PCM + sample rate conversion) |
 | `psp::audio_mixer` | `Mixer`, `Channel` | Multi-channel PCM software mixer |
-| `psp::mp3` | `Mp3Decoder`, `decode_frame()` | Hardware-accelerated MP3 decoding to PCM samples |
+| `psp::audiocodec` | `AudiocodecDecoder`, `CodecType` | Hardware codec decoder for MP3/AAC/ATRAC3/ATRAC3plus (RAII EDRAM) |
+| `psp::mp3` | `Mp3Decoder`, `decode_frame()`, `find_sync()` | Hardware MP3 decode, frame sync, ID3v2 tag parsing |
 
 #### Graphics & Rendering
 
@@ -131,6 +134,7 @@ The `psp` crate provides ~825 syscall bindings covering every major PSP subsyste
 |--------|---------|-------------|
 | `psp::me` | `MeExecutor`, `me_boot()` | Media Engine coprocessor boot/task management |
 | `psp::hw` | `hw_read32()`, `hw_write32()`, `Register<T>` | Memory-mapped hardware register I/O |
+| `psp::hook` | `SyscallHook`, `find_function()` | Kernel syscall hooking with inline fallback (CFW plugins) |
 
 #### Standalone Utilities
 
@@ -261,10 +265,12 @@ fn psp_main() {
 |--------|------|-------------|
 | `psp::sys::nand` | `sceNand*` | NAND flash read/write/status |
 | `psp::sys::sircs` | `sceSircsSend` | Infrared remote control (SIRCS) |
-| `psp::sys::codec` | `sceVideocodec*`, `sceAudiocodec*` | Hardware video/audio codecs |
+| `psp::sys::codec` | `sceVideocodec*` | Hardware video codecs |
+| `psp::sys::sctrl` | `sctrlHEN*` | CFW syscall hooking API (ARK-4/PRO) |
 | `psp::sys::power` | `scePowerGet/SetMeClockFrequency` | Media Engine clock control |
 | `psp::me` | `me_boot`, `me_alloc`, `to_uncached` | Media Engine coprocessor boot/task management |
 | `psp::hw` | `hw_read32`, `hw_write32`, `Register<T>` | Memory-mapped I/O register access |
+| `psp::hook` | `SyscallHook`, `find_function` | Syscall hooking with inline fallback for CFW plugins |
 | `psp::sys::kernel` | `sceKernelRegister*ExceptionHandler` | CPU exception handler registration |
 | `psp::sys::kernel` | `sceKernelVolatileMem*` | Extra 4MB RAM (PSP-2000+) |
 | `psp::sys::kernel` | `sceKernelAllocPartitionMemory` | ME/kernel memory partitions |
@@ -573,7 +579,7 @@ Tagging a commit with `v*` (e.g., `v0.1.0`) triggers a release build:
 
 ```
 rust-psp/
-+-- psp/                # Core PSP crate (~825 syscall bindings + 30 SDK modules)
++-- psp/                # Core PSP crate (~829 syscall bindings + 38 SDK modules)
 +-- cargo-psp/          # Build tool: cross-compile + prxgen + pack-pbp -> EBOOT.PBP
 +-- rust-std-src/       # PSP PAL overlay for std support (merged with rust-src at build time)
 +-- examples/           # Sample programs (hello-world, cube, gu-background, etc.)
