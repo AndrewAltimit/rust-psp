@@ -131,30 +131,30 @@ impl Mp3Decoder {
         }
         let handle = sys::Mp3Handle(handle_id);
 
-        let mut decoder = Self {
-            handle,
-            _data: owned_data,
-            mp3_buf,
-            pcm_buf,
-            eof: false,
+        // Feed initial data before constructing the struct so that on
+        // error the Vecs drop normally (no mem::forget needed).
+        let eof = match feed_data_raw(handle, &owned_data) {
+            Ok(eof) => eof,
+            Err(e) => {
+                unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+                return Err(e);
+            },
         };
-
-        // Feed initial data.
-        if let Err(e) = decoder.feed_data() {
-            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
-            core::mem::forget(decoder);
-            return Err(e);
-        }
 
         // Initialize the decoder (parses first frame header).
         let ret = unsafe { sys::sceMp3Init(handle) };
         if ret < 0 {
             unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
-            core::mem::forget(decoder);
             return Err(Mp3Error(ret));
         }
 
-        Ok(decoder)
+        Ok(Self {
+            handle,
+            _data: owned_data,
+            mp3_buf,
+            pcm_buf,
+            eof,
+        })
     }
 
     /// Reload the decoder with new MP3 data without releasing the handle.
@@ -246,57 +246,55 @@ impl Mp3Decoder {
 
     /// Feed data from the source buffer into the decoder's stream buffer.
     fn feed_data(&mut self) -> Result<(), Mp3Error> {
-        let mut dst_ptr: *mut u8 = core::ptr::null_mut();
-        let mut to_write: i32 = 0;
-        let mut src_pos: i32 = 0;
-
-        let ret = unsafe {
-            sys::sceMp3GetInfoToAddStreamData(
-                self.handle,
-                &mut dst_ptr,
-                &mut to_write,
-                &mut src_pos,
-            )
-        };
-        if ret < 0 {
-            return Err(Mp3Error(ret));
-        }
-
-        if to_write <= 0 || dst_ptr.is_null() {
-            self.eof = true;
-            return Ok(());
-        }
-
-        let src_offset = src_pos as usize;
-        let available = self._data.len().saturating_sub(src_offset);
-        let copy_len = (to_write as usize).min(available);
-
-        if copy_len == 0 {
-            self.eof = true;
-            let _ = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, 0) };
-            return Ok(());
-        }
-
-        // SAFETY: src_offset and copy_len are bounds-checked above.
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                self._data.as_ptr().add(src_offset),
-                dst_ptr,
-                copy_len,
-            );
-        }
-
-        let ret = unsafe { sys::sceMp3NotifyAddStreamData(self.handle, copy_len as i32) };
-        if ret < 0 {
-            return Err(Mp3Error(ret));
-        }
-
-        if src_offset + copy_len >= self._data.len() {
+        let eof = feed_data_raw(self.handle, &self._data)?;
+        if eof {
             self.eof = true;
         }
-
         Ok(())
     }
+}
+
+/// Feed source data into the decoder's stream buffer.
+///
+/// Returns `Ok(true)` when all data has been fed (EOF), `Ok(false)` otherwise.
+/// This is a free function so it can be called before the `Mp3Decoder` struct
+/// is fully constructed (avoiding `mem::forget` leaks on error paths).
+fn feed_data_raw(handle: sys::Mp3Handle, data: &[u8]) -> Result<bool, Mp3Error> {
+    let mut dst_ptr: *mut u8 = core::ptr::null_mut();
+    let mut to_write: i32 = 0;
+    let mut src_pos: i32 = 0;
+
+    let ret = unsafe {
+        sys::sceMp3GetInfoToAddStreamData(handle, &mut dst_ptr, &mut to_write, &mut src_pos)
+    };
+    if ret < 0 {
+        return Err(Mp3Error(ret));
+    }
+
+    if to_write <= 0 || dst_ptr.is_null() {
+        return Ok(true);
+    }
+
+    let src_offset = src_pos as usize;
+    let available = data.len().saturating_sub(src_offset);
+    let copy_len = (to_write as usize).min(available);
+
+    if copy_len == 0 {
+        let _ = unsafe { sys::sceMp3NotifyAddStreamData(handle, 0) };
+        return Ok(true);
+    }
+
+    // SAFETY: src_offset and copy_len are bounds-checked above.
+    unsafe {
+        core::ptr::copy_nonoverlapping(data.as_ptr().add(src_offset), dst_ptr, copy_len);
+    }
+
+    let ret = unsafe { sys::sceMp3NotifyAddStreamData(handle, copy_len as i32) };
+    if ret < 0 {
+        return Err(Mp3Error(ret));
+    }
+
+    Ok(src_offset + copy_len >= data.len())
 }
 
 impl Drop for Mp3Decoder {
