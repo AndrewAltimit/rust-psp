@@ -61,15 +61,32 @@ const PCM_BUF_SIZE: usize = 4608; // 1152 samples * 2 channels * 2 bytes (as i16
 impl Mp3Decoder {
     /// Create a decoder from in-memory MP3 data.
     ///
-    /// Initializes the MP3 resource subsystem, reserves a handle, and
-    /// feeds the initial data to the decoder.
+    /// Calls `sceMp3InitResource` and cleans up with `sceMp3TermResource`
+    /// on failure. For repeated decode sessions (song switching), prefer
+    /// calling `sceMp3InitResource` once at startup and using
+    /// [`new_reuse`](Self::new_reuse) for each song.
     pub fn new(data: &[u8]) -> Result<Self, Mp3Error> {
         let ret = unsafe { sys::sceMp3InitResource() };
         if ret < 0 {
             return Err(Mp3Error(ret));
         }
+        Self::create(data).map_err(|e| {
+            unsafe { sys::sceMp3TermResource() };
+            e
+        })
+    }
 
-        // Skip ID3v2 tag so the decoder sees raw MP3 frames.
+    /// Create a decoder when the MP3 resource subsystem is already initialized.
+    ///
+    /// Use after `sceMp3InitResource` has been called once (or after a
+    /// previous decoder was released via [`release`](Self::release)).
+    /// Avoids the Init→Term→Init cycle which crashes on real PSP hardware.
+    pub fn new_reuse(data: &[u8]) -> Result<Self, Mp3Error> {
+        Self::create(data)
+    }
+
+    /// Internal constructor — does not call InitResource or TermResource.
+    fn create(data: &[u8]) -> Result<Self, Mp3Error> {
         let start_offset = skip_id3v2(data);
 
         let owned_data = Vec::from(data);
@@ -89,7 +106,6 @@ impl Mp3Decoder {
 
         let handle_id = unsafe { sys::sceMp3ReserveMp3Handle(&mut init_arg) };
         if handle_id < 0 {
-            unsafe { sys::sceMp3TermResource() };
             return Err(Mp3Error(handle_id));
         }
         let handle = sys::Mp3Handle(handle_id);
@@ -104,20 +120,16 @@ impl Mp3Decoder {
 
         // Feed initial data.
         if let Err(e) = decoder.feed_data() {
-            unsafe {
-                sys::sceMp3ReleaseMp3Handle(handle);
-                sys::sceMp3TermResource();
-            }
+            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+            decoder.suppress_drop();
             return Err(e);
         }
 
         // Initialize the decoder.
         let ret = unsafe { sys::sceMp3Init(handle) };
         if ret < 0 {
-            unsafe {
-                sys::sceMp3ReleaseMp3Handle(handle);
-                sys::sceMp3TermResource();
-            }
+            unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
+            decoder.suppress_drop();
             return Err(Mp3Error(ret));
         }
 
@@ -183,15 +195,26 @@ impl Mp3Decoder {
     ///
     /// Use this instead of dropping when another decoder will be created
     /// afterward (e.g. switching songs). The global MP3 resource subsystem
-    /// stays initialized so the next `Mp3Decoder::new()` succeeds without
-    /// a full Init→Term→Init cycle (which crashes on real PSP hardware).
+    /// stays initialized so the next [`new_reuse`](Self::new_reuse) call
+    /// succeeds without an Init→Term→Init cycle.
     ///
     /// Heap buffers are freed normally — only `sceMp3TermResource` is skipped.
     pub fn release(self) {
         let mut this = core::mem::ManuallyDrop::new(self);
         unsafe { sys::sceMp3ReleaseMp3Handle(this.handle) };
-        // Free heap buffers without running Drop (which calls TermResource).
         // SAFETY: Each field is valid and only dropped once.
+        unsafe {
+            core::ptr::drop_in_place(&mut this._data);
+            core::ptr::drop_in_place(&mut this.mp3_buf);
+            core::ptr::drop_in_place(&mut this.pcm_buf);
+        }
+    }
+
+    /// Free heap buffers without running Drop (skips both ReleaseMp3Handle
+    /// and TermResource). Used in error paths where the handle was already
+    /// released by the caller.
+    fn suppress_drop(self) {
+        let mut this = core::mem::ManuallyDrop::new(self);
         unsafe {
             core::ptr::drop_in_place(&mut this._data);
             core::ptr::drop_in_place(&mut this.mp3_buf);
