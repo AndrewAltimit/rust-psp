@@ -143,13 +143,25 @@ impl Mp3Decoder {
     /// After reload, metadata accessors (`sample_rate`, `channels`, etc.)
     /// may return stale values until the first `decode_frame` call.
     pub fn reload(&mut self, data: &[u8]) -> Result<(), Mp3Error> {
-        // Reset decoder to beginning of stream.
         self.reset()?;
-        // Replace source data (strip ID3v2 tag).
         let start_offset = skip_id3v2(data);
         self._data = Vec::from(&data[start_offset..]);
         self.eof = false;
-        // Re-feed initial data from the new source.
+        self.feed_data()?;
+        Ok(())
+    }
+
+    /// Like [`reload`](Self::reload) but takes ownership of the data Vec
+    /// to avoid an extra copy. The ID3v2 tag prefix (if any) is drained
+    /// in-place.
+    pub fn reload_owned(&mut self, mut data: Vec<u8>) -> Result<(), Mp3Error> {
+        self.reset()?;
+        let start_offset = skip_id3v2(&data);
+        if start_offset > 0 {
+            data.drain(..start_offset);
+        }
+        self._data = data;
+        self.eof = false;
         self.feed_data()?;
         Ok(())
     }
