@@ -4,6 +4,15 @@
 //! ATRAC3plus audio frames. The codec uses the Media Engine (ME) coprocessor
 //! and requires EDRAM allocation.
 //!
+//! **This is the recommended API for MP3 playback with song switching.**
+//! The higher-level [`crate::mp3::Mp3Decoder`] (`sceMp3*`) is unstable on
+//! real hardware when reusing handles across songs (see its module docs for
+//! details). `AudiocodecDecoder` allocates EDRAM once and can decode
+//! indefinitely — just pass new frame data on each call to [`AudiocodecDecoder::decode`].
+//!
+//! For MP3 frame sync detection and ID3v2 tag stripping, see
+//! [`crate::mp3::find_sync`] and [`crate::mp3::skip_id3v2`].
+//!
 //! # Codec Buffer Layout
 //!
 //! The `sceAudiocodec*` functions operate on a 65-word (`u32`) buffer with

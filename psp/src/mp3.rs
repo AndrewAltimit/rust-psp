@@ -3,6 +3,29 @@
 //! Wraps the hardware-accelerated `sceMp3*` syscalls for decoding MP3
 //! audio data into PCM samples suitable for playback via [`crate::audio`].
 //!
+//! # Stability Warning
+//!
+//! The `sceMp3*` API is **unstable for handle reuse** on real PSP hardware
+//! (tested on PSP-3000 with 6.20 PRO-C CFW). Specifically:
+//!
+//! - Dropping a decoder and creating a new one (Release→Term→Init→Reserve
+//!   cycle) crashes after ~2 songs.
+//! - Using [`Mp3Decoder::reload`] or [`Mp3Decoder::reload_owned`] to reuse
+//!   a handle (ResetPlayPosition + re-feed, no Release/Term) still crashes
+//!   after ~3 songs.
+//! - All variations (with delays, staggered Init/Term, single-Init) exhibit
+//!   the same instability on real hardware. PPSSPP does not reproduce it.
+//!
+//! **For applications that switch between songs, use
+//! [`crate::audiocodec::AudiocodecDecoder`] instead.** The `sceAudiocodec`
+//! API provides frame-by-frame MP3 decoding with a single EDRAM allocation
+//! that can be reused indefinitely. You will need to handle MP3 frame sync
+//! detection yourself — see [`find_sync`] and [`skip_id3v2`] in this module
+//! for helpers.
+//!
+//! The `sceMp3` API works fine for **single-song playback** (e.g., a menu
+//! background track that plays once and never changes).
+//!
 //! # Example
 //!
 //! ```ignore
