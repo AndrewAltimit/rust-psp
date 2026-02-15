@@ -41,9 +41,12 @@ impl core::fmt::Display for Mp3Error {
 ///
 /// Decodes MP3 data using the PSP's hardware decoder. The MP3 data is
 /// provided as a byte slice and must remain valid for the decoder's lifetime.
+///
+/// For song switching, use [`reload`](Self::reload) to swap in new data
+/// without releasing the handle (which can crash on real PSP hardware).
 pub struct Mp3Decoder {
     handle: sys::Mp3Handle,
-    /// MP3 source data (kept alive for the duration of decoding).
+    /// MP3 source data (ID3v2 tag already stripped).
     _data: Vec<u8>,
     /// Internal stream buffer used by the MP3 decoder.
     mp3_buf: Vec<u8>,
@@ -58,13 +61,16 @@ const MP3_BUF_SIZE: usize = 8 * 1024;
 /// Size of the internal PCM output buffer (max output per decode call).
 const PCM_BUF_SIZE: usize = 4608; // 1152 samples * 2 channels * 2 bytes (as i16 count)
 
+/// Large sentinel for `mp3_stream_end` so a single handle can be reused
+/// for files of any size.  EOF is signalled by `feed_data` when the
+/// actual source data runs out.
+const STREAM_END_MAX: u32 = 0x0FFF_FFFF; // 256 MiB
+
 impl Mp3Decoder {
     /// Create a decoder from in-memory MP3 data.
     ///
-    /// Calls `sceMp3InitResource` and cleans up with `sceMp3TermResource`
-    /// on failure. For repeated decode sessions (song switching), prefer
-    /// calling `sceMp3InitResource` once at startup and using
-    /// [`new_reuse`](Self::new_reuse) for each song.
+    /// Initializes the MP3 resource subsystem, reserves a handle, and
+    /// feeds the initial data to the decoder.
     pub fn new(data: &[u8]) -> Result<Self, Mp3Error> {
         let ret = unsafe { sys::sceMp3InitResource() };
         if ret < 0 {
@@ -76,27 +82,19 @@ impl Mp3Decoder {
         })
     }
 
-    /// Create a decoder when the MP3 resource subsystem is already initialized.
-    ///
-    /// Use after `sceMp3InitResource` has been called once (or after a
-    /// previous decoder was released via [`release`](Self::release)).
-    /// Avoids the Init→Term→Init cycle which crashes on real PSP hardware.
-    pub fn new_reuse(data: &[u8]) -> Result<Self, Mp3Error> {
-        Self::create(data)
-    }
-
     /// Internal constructor — does not call InitResource or TermResource.
     fn create(data: &[u8]) -> Result<Self, Mp3Error> {
+        // Strip ID3v2 tag so all offsets are relative to raw MP3 frames.
         let start_offset = skip_id3v2(data);
+        let owned_data = Vec::from(&data[start_offset..]);
 
-        let owned_data = Vec::from(data);
         let mut mp3_buf = alloc::vec![0u8; MP3_BUF_SIZE];
         let mut pcm_buf = alloc::vec![0i16; PCM_BUF_SIZE];
 
         let mut init_arg = sys::SceMp3InitArg {
-            mp3_stream_start: start_offset as u32,
+            mp3_stream_start: 0,
             unk1: 0,
-            mp3_stream_end: owned_data.len() as u32,
+            mp3_stream_end: STREAM_END_MAX,
             unk2: 0,
             mp3_buf: mp3_buf.as_mut_ptr() as *mut c_void,
             mp3_buf_size: MP3_BUF_SIZE as i32,
@@ -121,19 +119,39 @@ impl Mp3Decoder {
         // Feed initial data.
         if let Err(e) = decoder.feed_data() {
             unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
-            decoder.suppress_drop();
+            core::mem::forget(decoder);
             return Err(e);
         }
 
-        // Initialize the decoder.
+        // Initialize the decoder (parses first frame header).
         let ret = unsafe { sys::sceMp3Init(handle) };
         if ret < 0 {
             unsafe { sys::sceMp3ReleaseMp3Handle(handle) };
-            decoder.suppress_drop();
+            core::mem::forget(decoder);
             return Err(Mp3Error(ret));
         }
 
         Ok(decoder)
+    }
+
+    /// Reload the decoder with new MP3 data without releasing the handle.
+    ///
+    /// Resets the play position, replaces the source data, and re-feeds
+    /// the decoder. This avoids the Release→Reserve cycle which can crash
+    /// on real PSP hardware.
+    ///
+    /// After reload, metadata accessors (`sample_rate`, `channels`, etc.)
+    /// may return stale values until the first `decode_frame` call.
+    pub fn reload(&mut self, data: &[u8]) -> Result<(), Mp3Error> {
+        // Reset decoder to beginning of stream.
+        self.reset()?;
+        // Replace source data (strip ID3v2 tag).
+        let start_offset = skip_id3v2(data);
+        self._data = Vec::from(&data[start_offset..]);
+        self.eof = false;
+        // Re-feed initial data from the new source.
+        self.feed_data()?;
+        Ok(())
     }
 
     /// Decode the next frame of MP3 data.
@@ -189,37 +207,6 @@ impl Mp3Decoder {
     pub fn reset(&mut self) -> Result<(), Mp3Error> {
         let ret = unsafe { sys::sceMp3ResetPlayPosition(self.handle) };
         if ret < 0 { Err(Mp3Error(ret)) } else { Ok(()) }
-    }
-
-    /// Release the MP3 handle without terminating the global resource.
-    ///
-    /// Use this instead of dropping when another decoder will be created
-    /// afterward (e.g. switching songs). The global MP3 resource subsystem
-    /// stays initialized so the next [`new_reuse`](Self::new_reuse) call
-    /// succeeds without an Init→Term→Init cycle.
-    ///
-    /// Heap buffers are freed normally — only `sceMp3TermResource` is skipped.
-    pub fn release(self) {
-        let mut this = core::mem::ManuallyDrop::new(self);
-        unsafe { sys::sceMp3ReleaseMp3Handle(this.handle) };
-        // SAFETY: Each field is valid and only dropped once.
-        unsafe {
-            core::ptr::drop_in_place(&mut this._data);
-            core::ptr::drop_in_place(&mut this.mp3_buf);
-            core::ptr::drop_in_place(&mut this.pcm_buf);
-        }
-    }
-
-    /// Free heap buffers without running Drop (skips both ReleaseMp3Handle
-    /// and TermResource). Used in error paths where the handle was already
-    /// released by the caller.
-    fn suppress_drop(self) {
-        let mut this = core::mem::ManuallyDrop::new(self);
-        unsafe {
-            core::ptr::drop_in_place(&mut this._data);
-            core::ptr::drop_in_place(&mut this.mp3_buf);
-            core::ptr::drop_in_place(&mut this.pcm_buf);
-        }
     }
 
     /// Feed data from the source buffer into the decoder's stream buffer.
