@@ -106,7 +106,7 @@ The `psp_extern!` macro generates syscall stubs with NIDs (numeric IDs) that the
 
 ### Kernel Mode (`--features kernel`)
 
-Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX module loading, volatile memory access, NAND flash, IR remote (SIRCS), hardware codecs, ME coprocessor control, hardware register I/O, and exception handling. Uses `module_kernel!()` macro. Key modules: `me.rs` (Media Engine boot/task), `hw.rs` (register I/O), `sys/nand.rs`, `sys/sircs.rs`, `sys/codec.rs`.
+Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX module loading, volatile memory access, NAND flash, IR remote (SIRCS), hardware video codecs, ME coprocessor control, hardware register I/O, exception handling, and CFW syscall hooking. Uses `module_kernel!()` macro. Key modules: `me.rs` (Media Engine boot/task), `hw.rs` (register I/O), `hook.rs` (syscall hooking), `sys/nand.rs`, `sys/sircs.rs`, `sys/codec.rs`, `sys/sctrl.rs`.
 
 ## Key Conventions
 
