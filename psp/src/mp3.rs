@@ -179,6 +179,17 @@ impl Mp3Decoder {
         if ret < 0 { Err(Mp3Error(ret)) } else { Ok(()) }
     }
 
+    /// Release the MP3 handle without terminating the global resource.
+    ///
+    /// Use this instead of dropping when another decoder will be created
+    /// afterward (e.g. switching songs). The global MP3 resource subsystem
+    /// stays initialized so the next `Mp3Decoder::new()` succeeds without
+    /// a full Init→Term→Init cycle (which crashes on real PSP hardware).
+    pub fn release(self) {
+        unsafe { sys::sceMp3ReleaseMp3Handle(self.handle) };
+        core::mem::forget(self);
+    }
+
     /// Feed data from the source buffer into the decoder's stream buffer.
     fn feed_data(&mut self) -> Result<(), Mp3Error> {
         let mut dst_ptr: *mut u8 = core::ptr::null_mut();
