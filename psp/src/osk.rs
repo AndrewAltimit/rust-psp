@@ -46,6 +46,11 @@ const SOUND_THREAD: i32 = 0x10;
 /// Maximum iterations for OSK polling (~30 seconds at 60 fps).
 const MAX_OSK_ITERATIONS: u32 = 1800;
 
+/// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
+#[repr(C, align(16))]
+struct Align16<T>(T);
+static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+
 fn make_common(size: u32) -> UtilityDialogCommon {
     UtilityDialogCommon {
         size,
@@ -150,19 +155,55 @@ impl OskBuilder {
             return Err(OskError(ret));
         }
 
+        // Close the caller's open GU display list so the utility dialog
+        // can render into the framebuffer.
+        // SAFETY: sceGuFinish/sceGuSync are GU FFI calls. The caller's
+        // display list was opened by sceGuStart in swap_buffers or init.
+        unsafe {
+            crate::sys::sceGuFinish();
+            crate::sys::sceGuSync(
+                crate::sys::GuSyncMode::Finish,
+                crate::sys::GuSyncBehavior::Wait,
+            );
+        }
+
         for _ in 0..MAX_OSK_ITERATIONS {
             let status = unsafe { crate::sys::sceUtilityOskGetStatus() };
+            if status == 0 {
+                break;
+            }
+
+            // Provide a GU frame for the dialog to render into.
+            // SAFETY: DIALOG_LIST is only used by utility dialog loops
+            // which run on the main thread and never overlap.
+            unsafe {
+                crate::sys::sceGuStart(
+                    crate::sys::GuContextType::Direct,
+                    &raw mut DIALOG_LIST as *mut core::ffi::c_void,
+                );
+            }
+
             match status {
-                2 => {
-                    unsafe { crate::sys::sceUtilityOskUpdate(1) };
+                2 => unsafe {
+                    crate::sys::sceUtilityOskUpdate(1);
                 },
-                3 => {
-                    unsafe { crate::sys::sceUtilityOskShutdownStart() };
+                3 => unsafe {
+                    crate::sys::sceUtilityOskShutdownStart();
                 },
-                0 => break,
                 _ => {},
             }
-            unsafe { crate::sys::sceDisplayWaitVblankStart() };
+
+            // SAFETY: GU frame lifecycle calls to finalize the dialog's
+            // display list and present it on screen.
+            unsafe {
+                crate::sys::sceGuFinish();
+                crate::sys::sceGuSync(
+                    crate::sys::GuSyncMode::Finish,
+                    crate::sys::GuSyncBehavior::Wait,
+                );
+                crate::sys::sceDisplayWaitVblankStart();
+                crate::sys::sceGuSwapBuffers();
+            }
         }
 
         match osk_data.result {

@@ -76,6 +76,11 @@ fn make_message_buf(message: &str) -> [u8; 512] {
 /// Maximum iterations for dialog polling (~10 seconds at 60 fps).
 const MAX_DIALOG_ITERATIONS: u32 = 600;
 
+/// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
+#[repr(C, align(16))]
+struct Align16<T>(T);
+static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+
 fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, DialogError> {
     let ret =
         unsafe { crate::sys::sceUtilityMsgDialogInitStart(params as *mut UtilityMsgDialogParams) };
@@ -83,16 +88,54 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
         return Err(DialogError(ret));
     }
 
+    // Close the caller's open GU display list so the utility dialog
+    // can render into the framebuffer.
+    // SAFETY: sceGuFinish/sceGuSync are GU FFI calls. The caller's
+    // display list was opened by sceGuStart in swap_buffers or init.
+    unsafe {
+        crate::sys::sceGuFinish();
+        crate::sys::sceGuSync(
+            crate::sys::GuSyncMode::Finish,
+            crate::sys::GuSyncBehavior::Wait,
+        );
+    }
+
     for _ in 0..MAX_DIALOG_ITERATIONS {
         let status = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+        if status == 0 {
+            break;
+        }
+
+        // Provide a GU frame for the dialog to render into.
+        // SAFETY: DIALOG_LIST is only used by utility dialog loops
+        // which run on the main thread and never overlap.
+        unsafe {
+            crate::sys::sceGuStart(
+                crate::sys::GuContextType::Direct,
+                &raw mut DIALOG_LIST as *mut core::ffi::c_void,
+            );
+        }
+
         match status {
-            2 => unsafe { crate::sys::sceUtilityMsgDialogUpdate(1) },
-            3 => unsafe { crate::sys::sceUtilityMsgDialogShutdownStart() },
-            0 => break,
+            2 => unsafe {
+                crate::sys::sceUtilityMsgDialogUpdate(1);
+            },
+            3 => unsafe {
+                crate::sys::sceUtilityMsgDialogShutdownStart();
+            },
             _ => {},
         }
+
+        // SAFETY: GU frame lifecycle calls to finalize the dialog's
+        // display list and present it on screen.
         unsafe {
+            crate::sys::sceGuFinish();
+            crate::sys::sceGuSync(
+                crate::sys::GuSyncMode::Finish,
+                crate::sys::GuSyncBehavior::Wait,
+            );
             crate::sys::sceDisplayWaitVblankStart();
+            crate::sys::sceGuSwapBuffers();
         }
     }
 

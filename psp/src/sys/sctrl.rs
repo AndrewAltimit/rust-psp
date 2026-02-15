@@ -7,7 +7,7 @@
 
 psp_extern! {
     #![name = "SystemCtrlForKernel"]
-    #![flags = 0x4001]
+    #![flags = 0x4009]
     #![version = (0, 0)]
 
     #[psp(0x159AF5CC)]
