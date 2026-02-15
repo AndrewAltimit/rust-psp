@@ -228,3 +228,52 @@ impl Drop for Mp3Decoder {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// MP3 frame utilities
+// ---------------------------------------------------------------------------
+
+/// Find the next MP3 frame sync position in `data` starting from `offset`.
+///
+/// An MP3 frame sync is 0xFF followed by a byte with the upper 3 bits set
+/// (0xE0 mask). This function additionally validates that the MPEG version
+/// and layer fields are not "reserved" values, filtering out false positives.
+///
+/// Returns `None` if no valid sync is found.
+pub fn find_sync(data: &[u8], offset: usize) -> Option<usize> {
+    let mut i = offset;
+    while i + 1 < data.len() {
+        if data[i] == 0xFF && (data[i + 1] & 0xE0) == 0xE0 {
+            // Validate MPEG version (bits 4-3) and layer (bits 2-1) are not reserved.
+            let version = (data[i + 1] >> 3) & 0x03;
+            let layer = (data[i + 1] >> 1) & 0x03;
+            if version != 0x01 && layer != 0x00 {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Skip an ID3v2 tag at the beginning of `data`.
+///
+/// If an ID3v2 header is present, returns the byte offset immediately after
+/// the tag (header + body). Otherwise returns 0.
+///
+/// The ID3v2 tag size is encoded as a 28-bit synchsafe integer (4 bytes,
+/// 7 bits each) in bytes 6-9 of the header. The total tag size includes the
+/// 10-byte header.
+pub fn skip_id3v2(data: &[u8]) -> usize {
+    // ID3v2 header: "ID3" + version(2) + flags(1) + size(4) = 10 bytes minimum.
+    if data.len() < 10 || data[0] != b'I' || data[1] != b'D' || data[2] != b'3' {
+        return 0;
+    }
+    // Synchsafe integer: each byte uses only 7 bits.
+    let size = ((data[6] as usize & 0x7F) << 21)
+        | ((data[7] as usize & 0x7F) << 14)
+        | ((data[8] as usize & 0x7F) << 7)
+        | (data[9] as usize & 0x7F);
+    // Total = 10-byte header + tag body.
+    10 + size
+}

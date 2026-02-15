@@ -1,17 +1,20 @@
-//! Hardware video and audio codec bindings.
+//! Hardware video and audio codec bindings (`sceVideocodec`, `sceAudiocodec`).
 //!
-//! # Kernel Mode Required
+//! These functions work in both user mode and kernel mode:
 //!
-//! This module requires `feature = "kernel"` and `psp::module_kernel!()`.
+//! - **User mode**: Requires `sceUtilityLoadModule(AVCODEC)` and
+//!   `sceUtilityLoadModule(MPEGBASE)` to be called first so the codec
+//!   firmware modules are loaded.
+//! - **Kernel mode**: Codec modules are typically loaded by the game or
+//!   application. Kernel callers may need user-memory buffers for source/
+//!   destination parameters (the codec validates pointer ranges).
 //!
 //! # Media Engine Integration
 //!
-//! The `sceAudiocodecDecode` function uses the Media Engine (ME) coprocessor
-//! internally when called from user mode. In kernel mode, callers can
-//! directly control ME partition allocation for codec buffers using
-//! `sceKernelAllocPartitionMemory` with partition 3 (ME kernel) or 10
-//! (extended ME kernel). This gives finer control over memory layout and
-//! allows sharing codec buffers with custom ME tasks.
+//! `sceAudiocodecDecode` uses the Media Engine (ME) coprocessor internally.
+//! In kernel mode, callers can directly control ME partition allocation for
+//! codec buffers using `sceKernelAllocPartitionMemory` with partition 3
+//! (ME kernel) or 10 (extended ME kernel).
 
 psp_extern! {
     #![name = "sceVideocodec"]
@@ -46,6 +49,8 @@ psp_extern! {
     pub fn sceVideocodecReleaseEDRAM(buffer: *mut u32) -> i32;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
 pub enum AudioCodec {
     At3Plus = 0x00001000,
     At3 = 0x00001001,
