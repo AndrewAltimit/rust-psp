@@ -211,23 +211,21 @@ impl OskBuilder {
             }
         }
 
-        // If the dialog is still active after the polling loop (timeout or
-        // error), force-shutdown so subsequent utility calls don't fail
-        // with UTILITY_INVALID_STATUS.
-        let final_status = unsafe { crate::sys::sceUtilityOskGetStatus() };
-        if final_status > 0 {
-            unsafe {
-                crate::sys::sceUtilityOskShutdownStart();
-            }
-            // Drain the shutdown state machine.
-            for _ in 0..120 {
-                let s = unsafe { crate::sys::sceUtilityOskGetStatus() };
-                if s == 0 || s < 0 {
-                    break;
-                }
-                unsafe {
+        // If the dialog reached QUIT (3) or FINISHED (4) but the polling
+        // loop exited before it drained to NONE (0), finish the shutdown.
+        // We cannot call ShutdownStart from RUNNING (2) -- that requires
+        // user interaction to transition to QUIT first.
+        for _ in 0..120 {
+            let s = unsafe { crate::sys::sceUtilityOskGetStatus() };
+            match s {
+                3 => unsafe {
+                    crate::sys::sceUtilityOskShutdownStart();
                     crate::sys::sceDisplayWaitVblankStart();
-                }
+                },
+                4 => unsafe {
+                    crate::sys::sceDisplayWaitVblankStart();
+                },
+                _ => break,
             }
         }
 
