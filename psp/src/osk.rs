@@ -211,6 +211,26 @@ impl OskBuilder {
             }
         }
 
+        // If the dialog is still active after the polling loop (timeout or
+        // error), force-shutdown so subsequent utility calls don't fail
+        // with UTILITY_INVALID_STATUS.
+        let final_status = unsafe { crate::sys::sceUtilityOskGetStatus() };
+        if final_status > 0 {
+            unsafe {
+                crate::sys::sceUtilityOskShutdownStart();
+            }
+            // Drain the shutdown state machine.
+            for _ in 0..120 {
+                let s = unsafe { crate::sys::sceUtilityOskGetStatus() };
+                if s == 0 || s < 0 {
+                    break;
+                }
+                unsafe {
+                    crate::sys::sceDisplayWaitVblankStart();
+                }
+            }
+        }
+
         match osk_data.result {
             SceUtilityOskResult::Changed => {
                 let text = utf16_to_string(&output_buf);

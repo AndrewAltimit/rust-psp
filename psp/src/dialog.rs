@@ -144,6 +144,25 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
         }
     }
 
+    // If the dialog is still active after the polling loop (timeout or
+    // error), force-shutdown so subsequent utility calls don't fail
+    // with UTILITY_INVALID_STATUS.
+    let final_status = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+    if final_status > 0 {
+        unsafe {
+            crate::sys::sceUtilityMsgDialogShutdownStart();
+        }
+        for _ in 0..120 {
+            let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+            if s == 0 || s < 0 {
+                break;
+            }
+            unsafe {
+                crate::sys::sceDisplayWaitVblankStart();
+            }
+        }
+    }
+
     Ok(match params.button_pressed {
         UtilityMsgDialogPressed::Yes => DialogResult::Confirm,
         UtilityMsgDialogPressed::No => DialogResult::Cancel,
