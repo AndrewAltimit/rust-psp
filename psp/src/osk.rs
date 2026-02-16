@@ -169,11 +169,14 @@ impl OskBuilder {
 
         for _ in 0..MAX_OSK_ITERATIONS {
             let status = unsafe { crate::sys::sceUtilityOskGetStatus() };
-            if status == 0 {
+            if status == 0 || status < 0 {
                 break;
             }
 
-            // Provide a GU frame for the dialog to render into.
+            // Provide a GU frame with a cleared screen as the dialog
+            // background, then close the frame before updating the
+            // utility dialog.  PSPSDK convention: the dialog update
+            // must be called **outside** any open GU display list.
             // SAFETY: DIALOG_LIST is only used by utility dialog loops
             // which run on the main thread and never overlap.
             unsafe {
@@ -181,8 +184,16 @@ impl OskBuilder {
                     crate::sys::GuContextType::Direct,
                     &raw mut DIALOG_LIST as *mut core::ffi::c_void,
                 );
+                crate::sys::sceGuClearColor(0xff00_0000); // opaque black
+                crate::sys::sceGuClear(crate::sys::ClearBuffer::COLOR_BUFFER_BIT);
+                crate::sys::sceGuFinish();
+                crate::sys::sceGuSync(
+                    crate::sys::GuSyncMode::Finish,
+                    crate::sys::GuSyncBehavior::Wait,
+                );
             }
 
+            // Update the utility dialog outside the GU frame.
             match status {
                 2 => unsafe {
                     crate::sys::sceUtilityOskUpdate(1);
@@ -193,16 +204,28 @@ impl OskBuilder {
                 _ => {},
             }
 
-            // SAFETY: GU frame lifecycle calls to finalize the dialog's
-            // display list and present it on screen.
+            // SAFETY: Present the frame.
             unsafe {
-                crate::sys::sceGuFinish();
-                crate::sys::sceGuSync(
-                    crate::sys::GuSyncMode::Finish,
-                    crate::sys::GuSyncBehavior::Wait,
-                );
                 crate::sys::sceDisplayWaitVblankStart();
                 crate::sys::sceGuSwapBuffers();
+            }
+        }
+
+        // If the dialog reached QUIT (3) or FINISHED (4) but the polling
+        // loop exited before it drained to NONE (0), finish the shutdown.
+        // We cannot call ShutdownStart from RUNNING (2) -- that requires
+        // user interaction to transition to QUIT first.
+        for _ in 0..120 {
+            let s = unsafe { crate::sys::sceUtilityOskGetStatus() };
+            match s {
+                3 => unsafe {
+                    crate::sys::sceUtilityOskShutdownStart();
+                    crate::sys::sceDisplayWaitVblankStart();
+                },
+                4 => unsafe {
+                    crate::sys::sceDisplayWaitVblankStart();
+                },
+                _ => break,
             }
         }
 
