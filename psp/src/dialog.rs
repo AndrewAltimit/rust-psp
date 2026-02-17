@@ -78,8 +78,15 @@ const MAX_DIALOG_ITERATIONS: u32 = 600;
 
 /// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
 #[repr(C, align(16))]
-struct Align16<T>(T);
-static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+pub(crate) struct Align16<T>(pub T);
+/// Shared display list for all utility dialog loops. Only accessed from
+/// the main thread, never concurrently.
+pub(crate) static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+
+/// Create a `UtilityDialogCommon` for the netconf dialog.
+pub(crate) fn make_netconf_common(size: u32) -> UtilityDialogCommon {
+    make_common(size)
+}
 
 fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, DialogError> {
     let ret =

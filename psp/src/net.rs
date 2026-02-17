@@ -149,6 +149,109 @@ pub fn connect_ap_timeout(config_index: i32, timeout_ms: u32) -> Result<(), NetE
     Err(NetError(-1))
 }
 
+/// Connect to WiFi using the PSP's built-in network configuration dialog.
+///
+/// Shows a system dialog that lets the user select a stored WiFi profile
+/// and manages the entire connection flow (scan, auth, DHCP). This is the
+/// most compatible way to establish internet connectivity — it works on
+/// both real PSP hardware and PPSSPP.
+///
+/// The dialog renders into the framebuffer, so the caller's GU display
+/// list is closed and re-opened automatically.
+///
+/// Returns `Ok(())` when connected, or `Err` if the user cancelled or
+/// the dialog failed.
+pub fn connect_dialog() -> Result<(), NetError> {
+    // Check if we're already connected.
+    let mut state = sys::ApctlState::Disconnected;
+    let ret = unsafe { sys::sceNetApctlGetState(&mut state) };
+    if ret >= 0 && state == sys::ApctlState::GotIp {
+        return Ok(());
+    }
+
+    let mut data = sys::UtilityNetconfData {
+        base: crate::dialog::make_netconf_common(
+            core::mem::size_of::<sys::UtilityNetconfData>() as u32,
+        ),
+        action: sys::UtilityNetconfAction::ConnectAP,
+        adhocparam: core::ptr::null_mut(),
+        hotspot: 0,
+        hotspot_connected: 0,
+        wifisp: 0,
+    };
+
+    let ret = unsafe { sys::sceUtilityNetconfInitStart(&mut data) };
+    if ret < 0 {
+        return Err(NetError(ret));
+    }
+
+    // Close the caller's open GU display list.
+    unsafe {
+        sys::sceGuFinish();
+        sys::sceGuSync(sys::GuSyncMode::Finish, sys::GuSyncBehavior::Wait);
+    }
+
+    // Dialog rendering loop (up to ~30 seconds at 60 fps).
+    for _ in 0..1800 {
+        let status = unsafe { sys::sceUtilityNetconfGetStatus() };
+        if status == 0 || status < 0 {
+            break;
+        }
+
+        // Provide a GU frame for the dialog background.
+        // SAFETY: DIALOG_LIST is shared with dialog.rs but both run on
+        // the main thread and never overlap.
+        unsafe {
+            sys::sceGuStart(
+                sys::GuContextType::Direct,
+                &raw mut crate::dialog::DIALOG_LIST as *mut core::ffi::c_void,
+            );
+            sys::sceGuClearColor(0xff00_0000);
+            sys::sceGuClear(sys::ClearBuffer::COLOR_BUFFER_BIT);
+            sys::sceGuFinish();
+            sys::sceGuSync(sys::GuSyncMode::Finish, sys::GuSyncBehavior::Wait);
+        }
+
+        match status {
+            2 => { unsafe { sys::sceUtilityNetconfUpdate(1); } },
+            3 => { unsafe { sys::sceUtilityNetconfShutdownStart(); } },
+            _ => {},
+        }
+
+        unsafe {
+            sys::sceDisplayWaitVblankStart();
+            sys::sceGuSwapBuffers();
+        }
+    }
+
+    // Drain shutdown if needed.
+    for _ in 0..120 {
+        let s = unsafe { sys::sceUtilityNetconfGetStatus() };
+        match s {
+            3 => unsafe {
+                sys::sceUtilityNetconfShutdownStart();
+                sys::sceDisplayWaitVblankStart();
+            },
+            4 => unsafe {
+                sys::sceDisplayWaitVblankStart();
+            },
+            _ => break,
+        }
+    }
+
+    // Verify we actually got connected.
+    let mut state = sys::ApctlState::Disconnected;
+    let ret = unsafe { sys::sceNetApctlGetState(&mut state) };
+    if ret < 0 {
+        return Err(NetError(ret));
+    }
+    if state != sys::ApctlState::GotIp {
+        return Err(NetError(-1));
+    }
+
+    Ok(())
+}
+
 /// Disconnect from the current access point.
 pub fn disconnect_ap() -> Result<(), NetError> {
     let ret = unsafe { sys::sceNetApctlDisconnect() };
