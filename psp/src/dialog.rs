@@ -78,8 +78,15 @@ const MAX_DIALOG_ITERATIONS: u32 = 600;
 
 /// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
 #[repr(C, align(16))]
-struct Align16<T>(T);
-static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+pub(crate) struct Align16<T>(pub T);
+/// Shared display list for all utility dialog loops. Only accessed from
+/// the main thread, never concurrently.
+pub(crate) static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+
+/// Create a `UtilityDialogCommon` for the netconf dialog.
+pub(crate) fn make_netconf_common(size: u32) -> UtilityDialogCommon {
+    make_common(size)
+}
 
 fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, DialogError> {
     let ret =
@@ -146,17 +153,23 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
 
     // If the dialog reached QUIT (3) or FINISHED (4) but the polling
     // loop exited before it drained to NONE (0), finish the shutdown.
-    for _ in 0..120 {
-        let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
-        match s {
-            3 => unsafe {
-                crate::sys::sceUtilityMsgDialogShutdownStart();
+    // Call ShutdownStart once if still in QUIT state, then wait for
+    // the status to drain to NONE (0).
+    let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+    if s == 3 {
+        unsafe {
+            crate::sys::sceUtilityMsgDialogShutdownStart();
+        }
+    }
+    if s == 3 || s == 4 {
+        for _ in 0..120 {
+            let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+            if s != 3 && s != 4 {
+                break;
+            }
+            unsafe {
                 crate::sys::sceDisplayWaitVblankStart();
-            },
-            4 => unsafe {
-                crate::sys::sceDisplayWaitVblankStart();
-            },
-            _ => break,
+            }
         }
     }
 
