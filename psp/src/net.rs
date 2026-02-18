@@ -157,7 +157,8 @@ pub fn connect_ap_timeout(config_index: i32, timeout_ms: u32) -> Result<(), NetE
 /// both real PSP hardware and PPSSPP.
 ///
 /// The dialog renders into the framebuffer, so the caller's GU display
-/// list is closed and re-opened automatically.
+/// list is finished before the dialog runs. The caller must re-open a
+/// new display list with `sceGuStart` after this function returns.
 ///
 /// Returns `Ok(())` when connected, or `Err` if the user cancelled or
 /// the dialog failed.
@@ -171,7 +172,7 @@ pub fn connect_dialog() -> Result<(), NetError> {
 
     let mut data = sys::UtilityNetconfData {
         base: crate::dialog::make_netconf_common(
-            core::mem::size_of::<sys::UtilityNetconfData>() as u32,
+            core::mem::size_of::<sys::UtilityNetconfData>() as u32
         ),
         action: sys::UtilityNetconfAction::ConnectAP,
         adhocparam: core::ptr::null_mut(),
@@ -194,7 +195,10 @@ pub fn connect_dialog() -> Result<(), NetError> {
     // Dialog rendering loop (up to ~30 seconds at 60 fps).
     for _ in 0..1800 {
         let status = unsafe { sys::sceUtilityNetconfGetStatus() };
-        if status == 0 || status < 0 {
+        if status < 0 {
+            return Err(NetError(status));
+        }
+        if status == 0 {
             break;
         }
 
@@ -213,8 +217,12 @@ pub fn connect_dialog() -> Result<(), NetError> {
         }
 
         match status {
-            2 => { unsafe { sys::sceUtilityNetconfUpdate(1); } },
-            3 => { unsafe { sys::sceUtilityNetconfShutdownStart(); } },
+            2 => unsafe {
+                sys::sceUtilityNetconfUpdate(1);
+            },
+            3 => unsafe {
+                sys::sceUtilityNetconfShutdownStart();
+            },
             _ => {},
         }
 
@@ -224,18 +232,23 @@ pub fn connect_dialog() -> Result<(), NetError> {
         }
     }
 
-    // Drain shutdown if needed.
-    for _ in 0..120 {
-        let s = unsafe { sys::sceUtilityNetconfGetStatus() };
-        match s {
-            3 => unsafe {
-                sys::sceUtilityNetconfShutdownStart();
+    // Drain shutdown if needed. Call ShutdownStart once if still in
+    // QUIT state (3), then wait for FINISHED (4) to drain to NONE (0).
+    let s = unsafe { sys::sceUtilityNetconfGetStatus() };
+    if s == 3 {
+        unsafe {
+            sys::sceUtilityNetconfShutdownStart();
+        }
+    }
+    if s == 3 || s == 4 {
+        for _ in 0..120 {
+            let s = unsafe { sys::sceUtilityNetconfGetStatus() };
+            if s != 3 && s != 4 {
+                break;
+            }
+            unsafe {
                 sys::sceDisplayWaitVblankStart();
-            },
-            4 => unsafe {
-                sys::sceDisplayWaitVblankStart();
-            },
-            _ => break,
+            }
         }
     }
 

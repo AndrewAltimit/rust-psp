@@ -153,17 +153,23 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
 
     // If the dialog reached QUIT (3) or FINISHED (4) but the polling
     // loop exited before it drained to NONE (0), finish the shutdown.
-    for _ in 0..120 {
-        let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
-        match s {
-            3 => unsafe {
-                crate::sys::sceUtilityMsgDialogShutdownStart();
+    // Call ShutdownStart once if still in QUIT state, then wait for
+    // the status to drain to NONE (0).
+    let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+    if s == 3 {
+        unsafe {
+            crate::sys::sceUtilityMsgDialogShutdownStart();
+        }
+    }
+    if s == 3 || s == 4 {
+        for _ in 0..120 {
+            let s = unsafe { crate::sys::sceUtilityMsgDialogGetStatus() };
+            if s != 3 && s != 4 {
+                break;
+            }
+            unsafe {
                 crate::sys::sceDisplayWaitVblankStart();
-            },
-            4 => unsafe {
-                crate::sys::sceDisplayWaitVblankStart();
-            },
-            _ => break,
+            }
         }
     }
 
