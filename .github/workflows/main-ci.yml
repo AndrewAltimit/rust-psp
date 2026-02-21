@@ -300,9 +300,9 @@ jobs:
       - name: Delete pre-existing release if any
         run: |
           TAG="${{ steps.version.outputs.version }}"
-          PROBE_STDERR=$(gh release view "$TAG" 2>&1 >/dev/null)
-          PROBE_EXIT=$?
-          if [ $PROBE_EXIT -eq 0 ]; then
+          # Use 'if' to inhibit errexit (bash -e) so the non-zero exit
+          # from 'gh release view' doesn't terminate the step early.
+          if PROBE_STDERR=$(gh release view "$TAG" 2>&1 >/dev/null); then
             echo "Release $TAG exists, deleting..."
             gh release delete "$TAG" --yes
           elif [ "$PROBE_STDERR" = "release not found" ]; then
