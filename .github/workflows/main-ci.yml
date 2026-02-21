@@ -300,9 +300,17 @@ jobs:
       - name: Delete pre-existing release if any
         run: |
           TAG="${{ steps.version.outputs.version }}"
-          if gh release view "$TAG" > /dev/null 2>&1; then
+          PROBE_STDERR=$(gh release view "$TAG" 2>&1 >/dev/null) && {
+            echo "Release $TAG exists, deleting..."
             gh release delete "$TAG" --yes
-          fi
+          } || {
+            if [ "$PROBE_STDERR" = "release not found" ]; then
+              echo "No existing release for $TAG, skipping."
+            else
+              echo "::error::gh release view failed: $PROBE_STDERR"
+              exit 1
+            fi
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
