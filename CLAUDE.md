@@ -118,9 +118,8 @@ Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX m
 
 ## CI/CD
 
-Three GitHub Actions workflows:
-- **`ci.yml`**: Push to main — fmt, clippy, test, build, deny, emulator test
-- **`main-ci.yml`**: Main + version tags — full CI plus release binary creation
+Two GitHub Actions workflows:
+- **`main-ci.yml`**: Push to main + version tags — full CI (fmt, clippy, test, build, deny, emulator test) plus release binary creation and GitHub Release on tags/manual trigger
 - **`pr-validation.yml`**: PRs — full CI plus AI code reviews (Gemini/Codex), agent auto-fix (max 5 iterations)
 
 CI runs in Docker containers (`docker/rust-ci.Dockerfile` based on `rust:1.93-slim`). PSP tests run in PPSSPPHeadless emulator container.
