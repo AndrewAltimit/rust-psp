@@ -220,34 +220,38 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
-      - name: Generate changelog
+      - name: Generate changelog from merged PRs
         id: changelog
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CURRENT_TAG="${{ steps.version.outputs.version }}"
+
+          # Find the previous release tag for comparison
           PREVIOUS_TAG=$(git tag --sort=-version:refname --list 'v[0-9]*' | grep -Fxv "$CURRENT_TAG" | head -n 1)
 
+          CHANGELOG=""
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "Generating changelog: ${PREVIOUS_TAG}...${CURRENT_TAG}"
             CHANGELOG=$(gh api repos/${{ github.repository }}/releases/generate-notes \
               -f tag_name="$CURRENT_TAG" \
               -f previous_tag_name="$PREVIOUS_TAG" \
               --jq '.body' 2>/dev/null || echo "")
-
-            if [ -n "$CHANGELOG" ]; then
-              printf '%s\n' "$CHANGELOG" > changelog_snippet.md
-              echo "has_changelog=true" >> $GITHUB_OUTPUT
-            else
-              echo "has_changelog=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "has_changelog=false" >> $GITHUB_OUTPUT
           fi
 
+          if [ -n "$CHANGELOG" ]; then
+            printf '%s\n' "$CHANGELOG" > changelog_snippet.md
+            echo "has_changelog=true" >> $GITHUB_OUTPUT
+            echo "Changelog generated successfully"
+          else
+            echo "No changelog generated"
+            echo "has_changelog=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate release notes
+        id: release_notes
         run: |
-          cat << 'RELEASE_EOF' > release_notes.md
+          cat << 'EOF' > release_notes.md
           ## Release ${{ steps.version.outputs.version }}
 
           ### Rust PSP SDK
@@ -285,10 +289,7 @@ jobs:
 
           - **Commit**: ${{ github.sha }}
           - **Branch**: ${{ github.ref_name }}
-          RELEASE_EOF
-
-          # Remove leading whitespace from heredoc
-          sed -i 's/^          //' release_notes.md
+          EOF
 
           # Append auto-generated changelog if available
           if [ "${{ steps.changelog.outputs.has_changelog }}" = "true" ] && [ -f changelog_snippet.md ]; then
