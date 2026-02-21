@@ -297,6 +297,23 @@ jobs:
             cat changelog_snippet.md >> release_notes.md
           fi
 
+      - name: Delete pre-existing release if any
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          # Use 'if' to inhibit errexit (bash -e) so the non-zero exit
+          # from 'gh release view' doesn't terminate the step early.
+          if PROBE_STDERR=$(gh release view "$TAG" 2>&1 >/dev/null); then
+            echo "Release $TAG exists, deleting..."
+            gh release delete "$TAG" --yes
+          elif [ "$PROBE_STDERR" = "release not found" ]; then
+            echo "No existing release for $TAG, skipping."
+          else
+            echo "::error::gh release view failed: $PROBE_STDERR"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
