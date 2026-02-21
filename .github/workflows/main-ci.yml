@@ -297,6 +297,11 @@ jobs:
             cat changelog_snippet.md >> release_notes.md
           fi
 
+      - name: Delete pre-existing release if any
+        run: gh release delete "${{ steps.version.outputs.version }}" --yes 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
