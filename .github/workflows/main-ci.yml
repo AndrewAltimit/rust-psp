@@ -298,7 +298,11 @@ jobs:
           fi
 
       - name: Delete pre-existing release if any
-        run: gh release delete "${{ steps.version.outputs.version }}" --yes 2>/dev/null || true
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
