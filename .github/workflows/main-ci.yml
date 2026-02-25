@@ -334,6 +334,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 10
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
