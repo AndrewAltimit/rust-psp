@@ -181,6 +181,11 @@ img {
   transform: rotate(-45deg) translate(5px, -5px);
 }
 
+/* Mobile nav overlay (hidden by default, shown via JS on small screens) */
+.nav-mobile {
+  display: none;
+}
+
 /* --- Hero --- */
 .hero {
   position: relative;
