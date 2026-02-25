@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rust-psp — A Modern Rust SDK for Sony PSP Homebrew</title>
+  <meta name="description" content="Edition 2024 Rust SDK for PSP homebrew development with 829 syscall bindings, 33 high-level modules, full build toolchain, and kernel mode support.">
+  <meta name="theme-color" content="#0a0a0f">
+  <link rel="icon" type="image/svg+xml" href="img/favicon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============ Navigation ============ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo"><span class="accent">rust</span>-psp</a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+      <li><a href="#modules">Modules</a></li>
+      <li><a href="#examples">Examples</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#tools">Tools</a></li>
+    </ul>
+    <a href="https://github.com/AndrewAltimit/rust-psp" class="nav-github nav-github-desktop" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <button type="button" class="hamburger" aria-label="Menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+</nav>
+
+<div class="nav-mobile">
+  <a href="#features">Features</a>
+  <a href="#quickstart">Quick Start</a>
+  <a href="#modules">Modules</a>
+  <a href="#examples">Examples</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#tools">Tools</a>
+  <a href="https://github.com/AndrewAltimit/rust-psp" target="_blank" rel="noopener">GitHub</a>
+</div>
+
+<!-- ============ Hero ============ -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-waves">
+    <svg class="wave-1" viewBox="0 0 1440 200" preserveAspectRatio="none">
+      <path d="M0,120 C360,180 720,60 1080,120 C1260,150 1380,100 1440,110 L1440,200 L0,200Z" fill="url(#wg1)"/>
+      <defs><linearGradient id="wg1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#4a9eff"/><stop offset="100%" stop-color="#7c5cff"/></linearGradient></defs>
+    </svg>
+    <svg class="wave-2" viewBox="0 0 1440 200" preserveAspectRatio="none">
+      <path d="M0,140 C400,80 800,180 1200,100 C1340,70 1400,120 1440,130 L1440,200 L0,200Z" fill="url(#wg2)"/>
+      <defs><linearGradient id="wg2" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#00d4aa"/></linearGradient></defs>
+    </svg>
+  </div>
+
+  <div class="hero-content">
+    <h1>rust-psp</h1>
+    <p class="hero-tagline">A Modern Rust SDK for Sony PSP Homebrew Development</p>
+    <p class="hero-subtitle">Edition 2024 &middot; Safety Hardened &middot; Kernel Mode Support</p>
+
+    <div class="hero-stats">
+      <span class="stat-badge"><span class="num">829</span> Syscalls</span>
+      <span class="stat-badge"><span class="num">33</span> SDK Modules</span>
+      <span class="stat-badge"><span class="num">30</span> Examples</span>
+    </div>
+
+    <div class="hero-buttons">
+      <a href="#quickstart" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/AndrewAltimit/rust-psp" class="btn btn-outline" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Features ============ -->
+<section id="features">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>Why <span class="accent">rust-psp</span>?</h2>
+      <p>Everything you need to write modern, safe homebrew for the PSP.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x1F4E1;</span>
+        <h3>Complete Syscall Coverage</h3>
+        <p>829 bindings across 33 modules covering every PSP subsystem — graphics, audio, networking, I/O, threading, and more.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x1F6E1;</span>
+        <h3>Safe Rust Abstractions</h3>
+        <p>33 high-level modules with RAII resource management, Result types, and zero panics in allocators or VRAM code.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x1F511;</span>
+        <h3>Kernel Mode Support</h3>
+        <p>Privileged APIs for NAND flash, IR remote, ME coprocessor, syscall hooking, and hardware register I/O.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x1F527;</span>
+        <h3>Full Build Toolchain</h3>
+        <p>cargo-psp wraps the entire pipeline: Rust source to ELF to PRX to EBOOT.PBP with a single command.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x1F4DA;</span>
+        <h3>Experimental std Support</h3>
+        <p>Use String, Vec, HashMap, and the full Rust standard library on PSP for familiar, productive development.</p>
+      </div>
+      <div class="feature-card fade-in">
+        <span class="feature-icon">&#x2705;</span>
+        <h3>CI-Tested in Emulator</h3>
+        <p>Automated integration tests run in PPSSPPHeadless via Docker, ensuring code works on real PSP hardware.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Quick Start ============ -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>Quick <span class="accent">Start</span></h2>
+      <p>Get from zero to running PSP homebrew in minutes.</p>
+    </div>
+
+    <div class="quickstart-steps">
+      <div class="step fade-in">
+        <div class="step-header">
+          <span class="step-num">1</span>
+          <h3>Install Prerequisites</h3>
+        </div>
+        <p>You'll need Rust nightly and the source component for cross-compilation.</p>
+        <pre><span class="lang-label">bash</span>
+<span class="fn">rustup</span> default nightly
+<span class="fn">rustup</span> component add rust-src</pre>
+      </div>
+
+      <div class="step fade-in">
+        <div class="step-header">
+          <span class="step-num">2</span>
+          <h3>Install cargo-psp</h3>
+        </div>
+        <p>Download a prebuilt binary from Releases, or build from source.</p>
+        <pre><span class="lang-label">bash</span>
+<span class="cm"># From crates.io (or GitHub Releases for prebuilt binaries)</span>
+<span class="fn">cargo</span> install cargo-psp</pre>
+      </div>
+
+      <div class="step fade-in">
+        <div class="step-header">
+          <span class="step-num">3</span>
+          <h3>Create a PSP Project</h3>
+        </div>
+        <p>Set up a new Cargo project and write your first PSP module.</p>
+        <pre><span class="lang-label">bash</span>
+<span class="fn">cargo</span> new hello-psp <span class="str">&&</span> <span class="kw">cd</span> hello-psp</pre>
+        <p>Add <code>psp</code> to your <code>Cargo.toml</code>, then write your entry point:</p>
+        <pre><span class="lang-label">rust</span>
+<span class="at">#![no_std]</span>
+<span class="at">#![no_main]</span>
+
+<span class="kw">use</span> psp;
+
+<span class="mac">psp::module!</span>(<span class="str">"hello_psp"</span>, <span class="num">1</span>, <span class="num">1</span>);
+
+<span class="kw">fn</span> <span class="fn">psp_main</span>() {
+    psp::dprintln!(<span class="str">"Hello from the PSP!"</span>);
+}</pre>
+      </div>
+
+      <div class="step fade-in">
+        <div class="step-header">
+          <span class="step-num">4</span>
+          <h3>Build</h3>
+        </div>
+        <p>Build your project into an EBOOT.PBP that the PSP can run.</p>
+        <pre><span class="lang-label">bash</span>
+<span class="fn">cargo</span> +nightly psp --release
+<span class="cm"># Output: target/mipsel-sony-psp/release/EBOOT.PBP</span></pre>
+      </div>
+
+      <div class="step fade-in">
+        <div class="step-header">
+          <span class="step-num">5</span>
+          <h3>Run</h3>
+        </div>
+        <p>Copy the EBOOT.PBP to your PSP's <code>ms0:/PSP/GAME/hello_psp/</code> folder, or open it in <a href="https://www.ppsspp.org/" target="_blank" rel="noopener">PPSSPP</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SDK Modules ============ -->
+<section id="modules" class="modules-section">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>SDK <span class="accent">Modules</span></h2>
+      <p>33 high-level modules organized by domain. Click a category to explore.</p>
+    </div>
+
+    <div class="module-categories fade-in">
+
+      <!-- System & Lifecycle -->
+      <div class="module-category open">
+        <div class="module-category-header">
+          <h3>System &amp; Lifecycle <span class="module-count">8</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">callback</span>
+            <div>
+              <div class="module-desc">Exit callback registration and lifecycle management</div>
+              <div class="module-types">setup_exit_callback, register_exit_callback</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">power</span>
+            <div>
+              <div class="module-desc">CPU/bus clock control, battery info, power event callbacks</div>
+              <div class="module-types">ClockFrequency, get_clock, set_clock, on_power_event</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">display</span>
+            <div>
+              <div class="module-desc">Framebuffer configuration and VBlank synchronization</div>
+              <div class="module-types">wait_vblank, set_framebuf, get_framebuf</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">time</span>
+            <div>
+              <div class="module-desc">High-resolution timing with Instant, Duration, and DateTime</div>
+              <div class="module-types">Instant, Duration, DateTime, FrameTimer</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">timer</span>
+            <div>
+              <div class="module-desc">One-shot alarms and virtual timers with microsecond precision</div>
+              <div class="module-types">Alarm, VTimer</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">dialog</span>
+            <div>
+              <div class="module-desc">System message, confirm, and error dialogs via utility API</div>
+              <div class="module-types">message_dialog, confirm_dialog, MessageDialogBuilder</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">system_param</span>
+            <div>
+              <div class="module-desc">System parameter queries (language, timezone, date format)</div>
+              <div class="module-types">SystemParamLanguage, SystemParamDateFormat</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">rtc</span>
+            <div>
+              <div class="module-desc">Real-time clock with date/time arithmetic operations</div>
+              <div class="module-types">RtcTime, get_current_tick</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threading & Synchronization -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Threading &amp; Synchronization <span class="module-count">2</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">thread</span>
+            <div>
+              <div class="module-desc">Thread spawning with builder pattern, join handles, and sleep</div>
+              <div class="module-types">ThreadBuilder, JoinHandle, spawn, sleep_ms</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">sync</span>
+            <div>
+              <div class="module-desc">Spinlock mutex/rwlock, SPSC queue, semaphore, event flags</div>
+              <div class="module-types">SpinMutex, SpinRwLock, SpscQueue, Semaphore, EventFlag</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Input <span class="module-count">2</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">input</span>
+            <div>
+              <div class="module-desc">Controller polling with press/release detection and analog deadzone</div>
+              <div class="module-types">Controller, ButtonState, AnalogStick</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">osk</span>
+            <div>
+              <div class="module-desc">On-screen keyboard for text input via system utility</div>
+              <div class="module-types">show_osk, OskBuilder</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- File I/O & Configuration -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>File I/O &amp; Configuration <span class="module-count">3</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">io</span>
+            <div>
+              <div class="module-desc">RAII file handles, directory iteration, read/write helpers</div>
+              <div class="module-types">File, ReadDir, read_to_vec, write_bytes</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">config</span>
+            <div>
+              <div class="module-desc">Key-value store with typed values and binary RCFG persistence</div>
+              <div class="module-types">Config, load, save</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">savedata</span>
+            <div>
+              <div class="module-desc">Game save/load via PSP savedata utility with metadata</div>
+              <div class="module-types">SaveDataBuilder, save, load</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Audio <span class="module-count">3</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">audio</span>
+            <div>
+              <div class="module-desc">RAII audio channel with reserve/output/release lifecycle</div>
+              <div class="module-types">AudioChannel, reserve, output_blocking</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">audio_mixer</span>
+            <div>
+              <div class="module-desc">Multi-channel PCM mixer with volume control</div>
+              <div class="module-types">AudioMixer, MixerChannel</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">audiocodec</span>
+            <div>
+              <div class="module-desc">Hardware audio codec access (MP3, AAC, ATRAC3)</div>
+              <div class="module-types">AudioCodec</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graphics & Rendering -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Graphics &amp; Rendering <span class="module-count">5</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">framebuffer</span>
+            <div>
+              <div class="module-desc">Double-buffered rendering with dirty rect tracking and layer compositing</div>
+              <div class="module-types">DoubleBuffer, DirtyRect, LayerCompositor</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">gu_ext</span>
+            <div>
+              <div class="module-desc">GU state snapshots, 2D setup helpers, and sprite batching</div>
+              <div class="module-types">GuStateSnapshot, setup_2d, SpriteBatch</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">simd</span>
+            <div>
+              <div class="module-desc">VFPU-accelerated Vec4/Mat4, easing functions, color operations</div>
+              <div class="module-types">Vec4, Mat4, vec4_length, vec4_distance</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">image</span>
+            <div>
+              <div class="module-desc">JPEG hardware decode and BMP 24/32-bit decode with auto-detection</div>
+              <div class="module-types">decode_jpeg, decode_bmp, load_image</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">font</span>
+            <div>
+              <div class="module-desc">System font rendering with VRAM glyph atlas and CLUT alpha ramp</div>
+              <div class="module-types">FontLib, Font, FontRenderer, GlyphAtlas</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Networking -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Networking <span class="module-count">3</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">net</span>
+            <div>
+              <div class="module-desc">WiFi connection, RAII TCP/UDP sockets, DNS resolution</div>
+              <div class="module-types">TcpStream, UdpSocket, connect_ap, resolve_hostname</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">http</span>
+            <div>
+              <div class="module-desc">High-level HTTP client with GET/POST and response parsing</div>
+              <div class="module-types">HttpClient, HttpResponse</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">wlan</span>
+            <div>
+              <div class="module-desc">WLAN chip status, power state, and MAC address queries</div>
+              <div class="module-types">WlanStatus, is_available, status</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hardware & Memory -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Hardware &amp; Memory <span class="module-count">4</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">dma</span>
+            <div>
+              <div class="module-desc">DMA memory transfer and VRAM blitting</div>
+              <div class="module-types">DmaResult, memcpy_dma, vram_blit_dma</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">cache</span>
+            <div>
+              <div class="module-desc">Cached/uncached pointer wrappers and data cache helpers</div>
+              <div class="module-types">CachedPtr, UncachedPtr, dcache_flush</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">mem</span>
+            <div>
+              <div class="module-desc">Typed kernel memory partition allocators</div>
+              <div class="module-types">Partition2Alloc, Partition3Alloc</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">usb</span>
+            <div>
+              <div class="module-desc">USB bus control and RAII storage mode</div>
+              <div class="module-types">UsbStorageMode, start_bus, is_connected</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kernel-Only -->
+      <div class="module-category">
+        <div class="module-category-header">
+          <h3>Kernel-Only <span class="module-count">3</span></h3>
+          <span class="module-chevron">&#9660;</span>
+        </div>
+        <div class="module-list">
+          <div class="module-item">
+            <span class="module-name">me</span>
+            <div>
+              <div class="module-desc">Media Engine coprocessor boot and task submission</div>
+              <div class="module-types">MeExecutor, MeSharedState</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">hw</span>
+            <div>
+              <div class="module-desc">Hardware register I/O for direct peripheral access</div>
+              <div class="module-types">read_reg, write_reg</div>
+            </div>
+          </div>
+          <div class="module-item">
+            <span class="module-name">hook</span>
+            <div>
+              <div class="module-desc">CFW syscall hooking for kernel module development</div>
+              <div class="module-types">SyscallHook</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ Examples Gallery ============ -->
+<section id="examples">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>Example <span class="accent">Gallery</span></h2>
+      <p>30 working examples covering graphics, audio, networking, input, and more.</p>
+    </div>
+
+    <div class="filter-bar fade-in">
+      <button class="filter-btn active" data-tag="all">All</button>
+      <button class="filter-btn" data-tag="Graphics">Graphics</button>
+      <button class="filter-btn" data-tag="Audio">Audio</button>
+      <button class="filter-btn" data-tag="Networking">Networking</button>
+      <button class="filter-btn" data-tag="Input">Input</button>
+      <button class="filter-btn" data-tag="Storage">Storage</button>
+      <button class="filter-btn" data-tag="System">System</button>
+      <button class="filter-btn" data-tag="Text">Text</button>
+      <button class="filter-btn" data-tag="Math">Math</button>
+      <button class="filter-btn" data-tag="Threading">Threading</button>
+      <button class="filter-btn" data-tag="Kernel">Kernel</button>
+    </div>
+
+    <div class="examples-grid">
+
+      <div class="example-card fade-in" data-tags="Audio">
+        <h4>audio-tone</h4>
+        <div class="example-tags"><span class="example-tag">Audio</span></div>
+        <p>Generates and plays a 440Hz sine wave tone for 3 seconds using the PSP audio subsystem.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/audio-tone" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="System">
+        <h4>clock-speed</h4>
+        <div class="example-tags"><span class="example-tag">System</span></div>
+        <p>Reads and sets PSP CPU/bus clock frequencies to maximum speed.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/clock-speed" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Storage">
+        <h4>config-save</h4>
+        <div class="example-tags"><span class="example-tag">Storage</span></div>
+        <p>Saves and loads key-value configuration settings with multiple data types to binary RCFG format.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/config-save" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Math">
+        <h4>cube</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Math</span></div>
+        <p>Renders a rotating 3D textured cube using the GU graphics engine with matrix transforms and depth testing.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/cube" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Text">
+        <h4>embedded-graphics</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Text</span></div>
+        <p>Draws shapes and text using the embedded-graphics library including triangles, rectangles, and circles.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/embedded-graphics" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Storage">
+        <h4>file-io</h4>
+        <div class="example-tags"><span class="example-tag">Storage</span></div>
+        <p>Demonstrates basic file I/O operations writing and reading text files to the host filesystem.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/file-io" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Text">
+        <h4>fontdue-scrolltext</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Text</span></div>
+        <p>Renders scrolling text with fontdue library using sine wave animation and VRAM sprite batching.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/fontdue-scrolltext" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics">
+        <h4>gu-background</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span></div>
+        <p>Basic GU graphics initialization and display setup showing a colored background.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/gu-background" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Text">
+        <h4>gu-debug-print</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Text</span></div>
+        <p>Uses GU debug print functionality to render text directly to the graphics display.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/gu-debug-print" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="System">
+        <h4>hello-world</h4>
+        <div class="example-tags"><span class="example-tag">System</span></div>
+        <p>Minimal example that prints a hello message to the debug output.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/hello-world" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Networking">
+        <h4>http-client</h4>
+        <div class="example-tags"><span class="example-tag">Networking</span></div>
+        <p>High-level HTTP GET requests via psp::http::HttpClient with WiFi connectivity.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/http-client" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Input">
+        <h4>input-analog</h4>
+        <div class="example-tags"><span class="example-tag">Input</span></div>
+        <p>Reads analog stick input with deadzone normalization and button press detection.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/input-analog" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Kernel,System">
+        <h4>kernel-mode</h4>
+        <div class="example-tags"><span class="example-tag">Kernel</span><span class="example-tag">System</span></div>
+        <p>Demonstrates kernel-mode privileged APIs including ME clock, volatile memory, NAND flash, and hardware registers.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/kernel-mode" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Input">
+        <h4>msg-dialog</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Input</span></div>
+        <p>Displays a message dialog box using the GU-rendered system dialog utility.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/msg-dialog" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Networking">
+        <h4>net-http</h4>
+        <div class="example-tags"><span class="example-tag">Networking</span></div>
+        <p>Connects via WiFi and performs HTTP GET requests using raw TCP sockets.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/net-http" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Input,Text">
+        <h4>osk-input</h4>
+        <div class="example-tags"><span class="example-tag">Input</span><span class="example-tag">Text</span></div>
+        <p>Text input via on-screen keyboard (OSK) utility with both convenience function and builder pattern.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/osk-input" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Input">
+        <h4>paint-mode</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Input</span></div>
+        <p>Simple drawing application with analog stick control and button-based tool selection.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/paint-mode" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics">
+        <h4>rainbow</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span></div>
+        <p>Animated rainbow color transitions filling the screen via direct framebuffer manipulation.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/rainbow" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Text">
+        <h4>ratatui</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Text</span></div>
+        <p>Terminal UI rendering using ratatui library with styled text, borders, and layout widgets.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/ratatui" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="System">
+        <h4>rtc-sysinfo</h4>
+        <div class="example-tags"><span class="example-tag">System</span></div>
+        <p>Reads RTC date/time with arithmetic and queries system parameters like language and timezone.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/rtc-sysinfo" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="System">
+        <h4>rust-std-hello-world</h4>
+        <div class="example-tags"><span class="example-tag">System</span></div>
+        <p>Uses Rust standard library with String, Vec, and format! macros in no_std PSP environment.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/rust-std-hello-world" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Storage,Graphics">
+        <h4>savedata</h4>
+        <div class="example-tags"><span class="example-tag">Storage</span><span class="example-tag">Graphics</span></div>
+        <p>Saves and loads game data with metadata using the PSP savedata utility with GU rendering.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/savedata" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Storage">
+        <h4>screenshot</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Storage</span></div>
+        <p>Captures the framebuffer as a BMP image and writes it to file.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/screenshot" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Graphics,Text">
+        <h4>system-font</h4>
+        <div class="example-tags"><span class="example-tag">Graphics</span><span class="example-tag">Text</span></div>
+        <p>Renders system fonts with glyph atlas caching using PSP FontLib and FontRenderer API.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/system-font" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Threading">
+        <h4>thread-sync</h4>
+        <div class="example-tags"><span class="example-tag">Threading</span></div>
+        <p>Spawns multiple threads sharing a SpinMutex counter with thread synchronization and join.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/thread-sync" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="System">
+        <h4>time</h4>
+        <div class="example-tags"><span class="example-tag">System</span></div>
+        <p>Reads and displays the current date and time from the PSP real-time clock.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/time" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Threading">
+        <h4>timer-alarm</h4>
+        <div class="example-tags"><span class="example-tag">Threading</span></div>
+        <p>Sets one-shot alarm callbacks and virtual timers with microsecond precision time measurement.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/timer-alarm" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Math">
+        <h4>vfpu-addition</h4>
+        <div class="example-tags"><span class="example-tag">Math</span></div>
+        <p>Performs integer addition using VFPU (Vector FPU) inline assembly with float conversion.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/vfpu-addition" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Math">
+        <h4>vfpu-context-switching</h4>
+        <div class="example-tags"><span class="example-tag">Math</span></div>
+        <p>Demonstrates VFPU context save/restore with matrix operations preserving register state.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/vfpu-context-switching" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+      <div class="example-card fade-in" data-tags="Networking,System">
+        <h4>wlan</h4>
+        <div class="example-tags"><span class="example-tag">Networking</span><span class="example-tag">System</span></div>
+        <p>Queries WLAN chip status including power state, switch state, and MAC address.</p>
+        <a href="https://github.com/AndrewAltimit/rust-psp/tree/main/examples/wlan" class="view-source" target="_blank" rel="noopener">View Source &rarr;</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============ Architecture ============ -->
+<section id="architecture">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>Architecture <span class="accent">Overview</span></h2>
+      <p>How rust-psp is structured and how your code becomes a PSP executable.</p>
+    </div>
+
+    <div class="arch-diagram">
+      <div class="arch-block fade-in">
+        <h3>Two-Workspace Layout</h3>
+        <div class="arch-flow">
+          <div class="arch-node"><strong>Root Workspace</strong><br><small>psp crate, examples, CI tests</small><br><small>Target: mipsel-sony-psp</small></div>
+          <span class="arch-arrow">&nbsp;&nbsp;&amp;&nbsp;&nbsp;</span>
+          <div class="arch-node"><strong>cargo-psp Workspace</strong><br><small>Build tools (cargo-psp, prxgen, etc.)</small><br><small>Target: host architecture</small></div>
+        </div>
+      </div>
+
+      <div class="arch-block fade-in">
+        <h3>Build Pipeline</h3>
+        <div class="arch-flow">
+          <div class="arch-node">Rust Source</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node">cargo build</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node">ELF</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node">prxgen</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node">PRX</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node">pack-pbp</div>
+          <span class="arch-arrow">&rarr;</span>
+          <div class="arch-node"><strong>EBOOT.PBP</strong></div>
+        </div>
+      </div>
+
+      <div class="arch-block fade-in">
+        <h3>PSP Crate Layer Cake</h3>
+        <div class="arch-layers">
+          <div class="arch-layer">
+            <div class="arch-layer-bar l4">Your Code</div>
+          </div>
+          <div class="arch-layer">
+            <div class="arch-layer-bar l3">SDK Modules (33 high-level APIs)</div>
+          </div>
+          <div class="arch-layer">
+            <div class="arch-layer-bar l2">sys/ Bindings (829 syscall stubs via psp_extern!)</div>
+          </div>
+          <div class="arch-layer">
+            <div class="arch-layer-bar l1">PSP OS Kernel (NID resolution at load time)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-block fade-in">
+        <h3>Module System</h3>
+        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6;">
+          PSP executables require specific ELF sections: <code>.rodata.sceModuleInfo</code> for module metadata,
+          <code>.lib.stub</code> for import stubs, and <code>.lib.ent</code> for exports. The <code>psp_extern!</code>
+          macro generates syscall stubs with NIDs (Numeric IDs) — the first 4 bytes of SHA-1(function_name)
+          in little-endian — which the PSP OS resolves at load time. Module flags <code>0x0000</code> for user-mode,
+          <code>0x1000</code> for kernel-mode.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Build Tools ============ -->
+<section id="tools">
+  <div class="container">
+    <div class="section-header fade-in">
+      <h2>Build <span class="accent">Tools</span></h2>
+      <p>The cargo-psp suite handles every step from Rust source to PSP executable.</p>
+    </div>
+
+    <div class="tools-grid fade-in">
+      <div class="tool-card">
+        <h3>cargo-psp</h3>
+        <p>The main build command. Wraps <code>cargo build</code>, invokes <code>prxgen</code> and <code>pack-pbp</code> automatically, and reads project metadata from <code>Psp.toml</code>. Supports <code>--release</code>, <code>--features</code>, and custom target directories.</p>
+      </div>
+      <div class="tool-card">
+        <h3>prxgen</h3>
+        <p>Converts a MIPS ELF binary into PSP's PRX (relocatable module) format. Processes import/export tables and fixes up relocations for the PSP loader.</p>
+      </div>
+      <div class="tool-card">
+        <h3>pack-pbp</h3>
+        <p>Creates PBP archives — the PSP's executable package format. Bundles the PRX with SFO metadata, optional icons (ICON0.PNG), backgrounds, and startup sounds.</p>
+      </div>
+      <div class="tool-card">
+        <h3>mksfo</h3>
+        <p>Generates SFO (System File Object) metadata files containing the game title, disc ID, firmware version requirements, and parental control level.</p>
+      </div>
+      <div class="tool-card">
+        <h3>prxmin</h3>
+        <p>Minimizes PRX files by stripping debug sections and unnecessary ELF data, reducing the final binary size for distribution.</p>
+      </div>
+    </div>
+
+    <div class="config-example fade-in">
+      <h3>Psp.toml Configuration</h3>
+      <pre><span class="lang-label">toml</span>
+<span class="cm"># Project metadata for pack-pbp</span>
+[<span class="ty">metadata</span>]
+<span class="fn">title</span> = <span class="str">"My PSP Game"</span>
+<span class="fn">disc_id</span> = <span class="str">"RUST00001"</span>
+<span class="fn">disc_version</span> = <span class="str">"1.00"</span>
+<span class="fn">firmware_version</span> = <span class="str">"6.60"</span>
+
+<span class="cm"># Optional assets</span>
+<span class="fn">icon0</span> = <span class="str">"assets/icon.png"</span>
+<span class="fn">pic1</span> = <span class="str">"assets/background.png"</span>
+
+<span class="cm"># Localized titles</span>
+[<span class="ty">metadata.titles</span>]
+<span class="fn">japanese</span> = <span class="str">"PSPゲーム"</span>
+<span class="fn">english</span> = <span class="str">"My PSP Game"</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Footer ============ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/AndrewAltimit/rust-psp" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/AndrewAltimit/rust-psp/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/AndrewAltimit/rust-psp/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://github.com/AndrewAltimit/rust-psp/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    </div>
+    <div class="footer-meta">
+      <span class="version">v1.0.0</span><br>
+      Forked from <a href="https://github.com/overdrivenpotato/rust-psp" target="_blank" rel="noopener">overdrivenpotato/rust-psp</a><br>
+      MIT License &middot; PSPSDK portions under BSD License
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>
