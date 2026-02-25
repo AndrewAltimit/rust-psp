@@ -326,10 +326,40 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── Deploy GitHub Pages ────────────────────────────────────────
+  deploy-pages:
+    name: Deploy GitHub Pages
+    needs: ci
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: site
+          fetch-depth: 1
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
   # ── CI Summary ─────────────────────────────────────────────────
   notify:
     name: CI Summary
-    needs: [ci, build-release-binaries, create-release]
+    needs: [ci, build-release-binaries, create-release, deploy-pages]
     if: always()
     runs-on: self-hosted
     steps:
@@ -345,6 +375,7 @@ jobs:
           echo "| CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Binaries | ${{ needs.build-release-binaries.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| GitHub Release | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Pages | ${{ needs.deploy-pages.result }} |" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.ci.result }}" == "failure" ]]; then
             echo "" >> $GITHUB_STEP_SUMMARY
