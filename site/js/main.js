@@ -75,6 +75,11 @@
       mobileMenu.classList.toggle('open', isOpen);
       document.body.style.overflow = isOpen ? 'hidden' : '';
     });
+
+    // Close mobile menu when resizing past the mobile breakpoint
+    window.matchMedia('(min-width: 769px)').addEventListener('change', function (e) {
+      if (e.matches) closeMobileMenu();
+    });
   }
 
   // --- Scroll-triggered fade-in animations ---
