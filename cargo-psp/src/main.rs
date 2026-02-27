@@ -286,13 +286,17 @@ fn prepare_psp_sysroot() -> Result<()> {
     // Check if we can skip re-creating the sysroot.
     let marker = dest.join(".psp-sysroot-stamp");
     if marker.exists() {
-        // Re-create if any overlay file is newer than the marker.
+        // Re-create if overlay or rust-src is newer than the marker.
         let marker_time = fs::metadata(&marker)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
         let overlay_modified = newest_mtime(&overlay_src)?;
-        if overlay_modified <= marker_time {
+        let rust_src_modified = fs::metadata(rust_src.join("library/Cargo.lock"))
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
+        if overlay_modified <= marker_time && rust_src_modified <= marker_time {
             eprintln!("[NOTE]: PSP sysroot is up-to-date, skipping preparation.");
             return Ok(());
         }
