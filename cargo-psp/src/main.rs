@@ -294,7 +294,7 @@ fn prepare_psp_sysroot() -> Result<()> {
         let overlay_modified = newest_mtime(&overlay_src)?;
         let rust_src_modified = fs::metadata(rust_src.join("library/Cargo.lock"))
             .and_then(|m| m.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
+            .unwrap_or_else(|_| SystemTime::now());
 
         if overlay_modified <= marker_time && rust_src_modified <= marker_time {
             eprintln!("[NOTE]: PSP sysroot is up-to-date, skipping preparation.");
