@@ -1,6 +1,6 @@
 # Contributing
 
-This repository does not accept external contributions. All code changes are authored by AI agents (Claude, Gemini, Codex, OpenCode, Crush) operating under human direction.
+This repository does not accept external contributions. All code changes are authored by AI agents (Claude, Gemini, OpenCode, Crush) operating under human direction. OpenAI Codex has been removed from this project's tooling due to OpenAI's partnerships enabling mass surveillance and autonomous weapons decision-making (see README.md).
 
 ## No External Contributions
 

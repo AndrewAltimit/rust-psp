@@ -128,7 +128,7 @@ Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX m
 |----------|---------|---------|
 | `ci.yml` | Push to main | fmt, clippy, test, build, cargo-deny, PSP emulator test |
 | `main-ci.yml` | Push to main + `v*` tags | Full CI plus release binary creation |
-| `pr-validation.yml` | Pull requests | Full CI + Gemini/Codex AI reviews + agent auto-fix |
+| `pr-validation.yml` | Pull requests | Full CI + Gemini AI review + agent auto-fix (Codex disabled) |
 
 CI runs in Docker containers (`docker/rust-ci.Dockerfile` based on `rust:1.93-slim`). PSP tests run in PPSSPPHeadless emulator container.
 
@@ -150,8 +150,8 @@ When an agent opens or pushes to a PR targeting `main`:
 1. **Fork guard** blocks fork PRs from using self-hosted runners
 2. **CI** runs all 6 stages above
 3. **Gemini AI review** posts code review comments (via `github-agents pr-review`)
-4. **Codex AI review** posts secondary code review (via `github-agents pr-review --agent codex`)
-5. **Agent review response** reads Gemini/Codex feedback and auto-applies fixes (via `automation-cli review respond`, max 5 iterations)
+4. ~~**Codex AI review**~~ -- **DISABLED** (OpenAI removed due to mass surveillance / autonomous weapons concerns)
+5. **Agent review response** reads Gemini feedback and auto-applies fixes (via `automation-cli review respond`, max 5 iterations)
 6. **Agent failure handler** auto-fixes CI failures if CI failed (via `automation-cli review failure`, max 5 iterations)
 7. **PR status summary** aggregates all results
 
@@ -180,7 +180,7 @@ The self-hosted runner provides these binaries from [template-repo](https://gith
 
 | Binary | Used By | Purpose |
 |--------|---------|---------|
-| `github-agents` | `pr-validation.yml` | PR reviews (Gemini/Codex), iteration tracking |
+| `github-agents` | `pr-validation.yml` | PR reviews (Gemini), iteration tracking |
 | `automation-cli` | `pr-validation.yml` | Agent review response, failure handler |
 
 ## Local Agent Tooling
@@ -193,7 +193,6 @@ Scripts in `tools/cli/agents/` launch each agent:
 |--------|-------|-------|
 | `run_claude.sh` | Claude Code | Requires NVM + Node.js 22.16.0 |
 | `run_gemini.sh` | Gemini CLI | Requires `@google/gemini-cli` |
-| `run_codex.sh` | Codex CLI | Requires `@openai/codex` + `codex login` |
 | `run_opencode.sh` | OpenCode | Requires OpenRouter API key |
 | `run_crush.sh` | Crush | Requires OpenRouter API key |
 
@@ -208,7 +207,7 @@ Container-based MCP services available via `docker compose --profile services`:
 | `mcp-gemini` | Gemini AI consultation |
 | `mcp-opencode` | OpenCode AI (Qwen model via OpenRouter) |
 | `mcp-crush` | Crush AI (via OpenRouter) |
-| `mcp-codex` | Codex AI consultation |
+| `mcp-codex` | ~~Codex AI consultation~~ **DISABLED** (security policy) |
 | `mcp-github-board` | GitHub Projects board management |
 | `mcp-agentcore-memory` | Agent memory (ChromaDB backend) |
 | `mcp-reaction-search` | Reaction image search |

@@ -220,14 +220,16 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ── Codex AI Code Review (secondary) ───────────────────────────
+  # ── Codex AI Code Review (DISABLED) ────────────────────────────
+  # DISABLED: OpenAI Codex has been removed from this pipeline due to
+  # OpenAI's partnerships with governments that enable mass surveillance
+  # and autonomous weapons decision-making. These partnerships pose
+  # unacceptable security and ethical risks. See README.md for details.
+  # The job skeleton is retained so dependent jobs don't break.
   codex-review:
-    name: Codex AI Code Review
+    name: Codex AI Code Review (disabled)
     needs: [fork-guard, gemini-review]
-    if: >-
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      needs.gemini-review.result != 'skipped'
+    if: false  # Permanently disabled -- do not re-enable
     runs-on: self-hosted
     timeout-minutes: 15
     continue-on-error: true
@@ -302,7 +304,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ── Agent Review Response (responds to Gemini/Codex feedback) ──
+  # ── Agent Review Response (responds to Gemini feedback) ──
   agent-review-response:
     name: Agent Review Response
     needs: [ci, gemini-review, codex-review]
@@ -374,7 +376,6 @@ jobs:
         if: steps.iteration.outputs.should_skip != 'true'
         env:
           GEMINI_REVIEW_PATH: gemini-review.md
-          CODEX_REVIEW_PATH: codex-review.md
           BRANCH_NAME: ${{ github.head_ref }}
           ITERATION_COUNT: ${{ steps.iteration.outputs.iteration_count }}
         run: |
@@ -485,7 +486,7 @@ jobs:
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| CI | ${{ needs.ci.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Gemini Review | ${{ needs.gemini-review.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Codex Review | ${{ needs.codex-review.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Codex Review | disabled (security policy) |" >> $GITHUB_STEP_SUMMARY
           echo "| Review Response | ${{ needs.agent-review-response.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Failure Handler | ${{ needs.agent-failure-handler.result }} |" >> $GITHUB_STEP_SUMMARY
 
