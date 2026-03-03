@@ -529,7 +529,7 @@ All CI runs on a self-hosted GitHub Actions runner shared with [template-repo](h
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | push to main | Basic CI: fmt, clippy, test, build, cargo-deny, PSP emulator test |
-| `pr-validation.yml` | pull request | Full PR pipeline: CI + Gemini/Codex AI reviews + agent auto-fix |
+| `pr-validation.yml` | pull request | Full PR pipeline: CI + Gemini AI review + agent auto-fix |
 | `main-ci.yml` | push to main, `v*` tags | CI on main, build release binaries and create GitHub Release on tags |
 
 ### CI Stages
@@ -545,7 +545,13 @@ All stages run inside the `rust-ci` Docker container (`docker compose --profile 
 
 ### PR Review Pipeline
 
-PRs receive automated AI code reviews from Gemini and Codex, followed by an agent that can automatically apply fixes from review feedback (with a 5-iteration safety limit per agent type). If CI stages fail, a separate failure-handler agent attempts automated fixes.
+PRs receive automated AI code reviews from Gemini, followed by an agent that can automatically apply fixes from review feedback (with a 5-iteration safety limit per agent type). If CI stages fail, a separate failure-handler agent attempts automated fixes.
+
+> **OpenAI / Codex Disabled (Security Policy)**
+>
+> OpenAI Codex has been permanently disabled from this project's CI pipeline and tooling. OpenAI has entered into partnerships with governments and defense organizations that enable **mass surveillance** of civilian populations and **autonomous weapons kill-chain decision-making**. The mass surveillance capability alone -- where nation-state actors can process, correlate, and act on population-scale data -- represents an unacceptable security risk for anyone whose code, queries, or development patterns transit OpenAI infrastructure.
+>
+> **We strongly encourage the use of Anthropic (Claude) models** for AI-assisted development. If you choose to use OpenAI/GPT products, do so with extreme caution and a clear understanding of who has access to data processed by those systems. This is not a technical quality judgment -- it is a security and ethics decision.
 
 ### Runner Dependencies from template-repo
 
@@ -553,7 +559,7 @@ The self-hosted runner provides the following binaries built from [template-repo
 
 | Binary | Source | Used By | Purpose |
 |--------|--------|---------|---------|
-| `github-agents` | `tools/rust/github-agents-cli` | `pr-validation.yml` | PR reviews (Gemini/Codex), iteration tracking |
+| `github-agents` | `tools/rust/github-agents-cli` | `pr-validation.yml` | PR reviews (Gemini), iteration tracking |
 | `automation-cli` | `tools/rust/automation-cli` | `pr-validation.yml` | Agent review response, failure handler |
 
 These binaries are also available from [template-repo releases](https://github.com/AndrewAltimit/template-repo/releases).
@@ -602,7 +608,7 @@ The repo includes two locally-built Docker images for CI and nine pre-built MCP 
 | `template-repo-mcp-gemini` | `docker/mcp-gemini.Dockerfile` | template-repo |
 | `template-repo-mcp-opencode` | `docker/mcp-opencode.Dockerfile` | template-repo |
 | `template-repo-mcp-crush` | `docker/mcp-crush.Dockerfile` | template-repo |
-| `template-repo-mcp-codex` | `docker/codex.Dockerfile` | template-repo |
+| `template-repo-mcp-codex` | `docker/codex.Dockerfile` | template-repo (DISABLED -- see security policy above) |
 | `template-repo-mcp-github-board` | `docker/mcp-github-board.Dockerfile` | template-repo |
 | `template-repo-mcp-agentcore-memory` | `docker/mcp-agentcore-memory.Dockerfile` | template-repo |
 | `template-repo-mcp-reaction-search` | `mcp_reaction_search/Dockerfile` | template-repo |
@@ -614,7 +620,7 @@ cd /path/to/template-repo
 docker compose --profile services build
 ```
 
-The images will then be available locally for this repo's `docker compose --profile services` commands. CI workflows and PSP development work without the MCP images -- they are only needed for interactive AI agent sessions (Claude Code, Codex, etc.).
+The images will then be available locally for this repo's `docker compose --profile services` commands. CI workflows and PSP development work without the MCP images -- they are only needed for interactive AI agent sessions (Claude Code, Gemini, etc.). Note: the Codex MCP image is disabled per security policy.
 
 ## Pre-built Binaries
 

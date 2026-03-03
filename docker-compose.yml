@@ -106,6 +106,8 @@ services:
     profiles:
       - services
 
+  # DISABLED: OpenAI Codex removed due to mass surveillance and autonomous weapons
+  # partnerships. See README.md for details. Moved to unreachable profile.
   mcp-codex:
     image: template-repo-mcp-codex:latest
     user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
@@ -115,10 +117,10 @@ services:
     environment:
       - MODE=mcp
       - PORT=8021
-      - CODEX_ENABLED=${CODEX_ENABLED:-true}
+      - CODEX_ENABLED=false
       - CODEX_AUTH_PATH=/home/user/.codex/auth.json
     profiles:
-      - services
+      - disabled-codex  # was: services -- disabled per security policy
 
   mcp-github-board:
     image: template-repo-mcp-github-board:latest

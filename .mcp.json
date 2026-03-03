@@ -89,22 +89,10 @@
         "stdio"
       ]
     },
-    "codex": {
-      "command": "docker",
-      "args": [
-        "compose",
-        "-f",
-        "./docker-compose.yml",
-        "--profile",
-        "services",
-        "run",
-        "--rm",
-        "-T",
-        "mcp-codex",
-        "mcp-codex",
-        "--mode",
-        "stdio"
-      ]
+    "codex-DISABLED": {
+      "_reason": "OpenAI Codex disabled due to mass surveillance and autonomous weapons partnerships. See README.md.",
+      "command": "echo",
+      "args": ["DISABLED: OpenAI Codex removed from this project (security policy)"]
     },
     "github-board": {
       "command": "docker",
