@@ -193,7 +193,6 @@ Scripts in `tools/cli/agents/` launch each agent:
 |--------|-------|-------|
 | `run_claude.sh` | Claude Code | Requires NVM + Node.js 22.16.0 |
 | `run_gemini.sh` | Gemini CLI | Requires `@google/gemini-cli` |
-| `run_codex.sh` | Codex CLI | **DISABLED** -- OpenAI removed (security policy) |
 | `run_opencode.sh` | OpenCode | Requires OpenRouter API key |
 | `run_crush.sh` | Crush | Requires OpenRouter API key |
 

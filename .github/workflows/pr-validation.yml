@@ -304,7 +304,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ── Agent Review Response (responds to Gemini/Codex feedback) ──
+  # ── Agent Review Response (responds to Gemini feedback) ──
   agent-review-response:
     name: Agent Review Response
     needs: [ci, gemini-review, codex-review]
@@ -376,7 +376,6 @@ jobs:
         if: steps.iteration.outputs.should_skip != 'true'
         env:
           GEMINI_REVIEW_PATH: gemini-review.md
-          CODEX_REVIEW_PATH: codex-review.md
           BRANCH_NAME: ${{ github.head_ref }}
           ITERATION_COUNT: ${{ steps.iteration.outputs.iteration_count }}
         run: |
