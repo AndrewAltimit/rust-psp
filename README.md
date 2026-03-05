@@ -547,11 +547,9 @@ All stages run inside the `rust-ci` Docker container (`docker compose --profile 
 
 PRs receive automated AI code reviews from Gemini, followed by an agent that can automatically apply fixes from review feedback (with a 5-iteration safety limit per agent type). If CI stages fail, a separate failure-handler agent attempts automated fixes.
 
-> **OpenAI / Codex Disabled (Security Policy)**
+> **OpenAI / Codex Disabled**
 >
-> OpenAI Codex has been permanently disabled from this project's CI pipeline and tooling. OpenAI has entered into partnerships with governments and defense organizations that enable **mass surveillance** of civilian populations and **autonomous weapons kill-chain decision-making**. The mass surveillance capability alone -- where nation-state actors can process, correlate, and act on population-scale data -- represents an unacceptable security risk for anyone whose code, queries, or development patterns transit OpenAI infrastructure.
->
-> **We strongly encourage the use of Anthropic (Claude) models** for AI-assisted development. If you choose to use OpenAI/GPT products, do so with extreme caution and a clear understanding of who has access to data processed by those systems. This is not a technical quality judgment -- it is a security and ethics decision.
+> OpenAI/Codex integrations are disabled. OpenAI permits government partners unrestricted use of its models within their own definition of legality. Anthropic maintains explicit prohibitions on mass surveillance and autonomous weapons. We default to the stricter policy. To re-enable at your own risk: `CODEX_ENABLED=true`.
 
 ### Runner Dependencies from template-repo
 
