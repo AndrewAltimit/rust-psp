@@ -18,7 +18,7 @@
 
 psp_extern! {
     #![name = "sceVideocodec"]
-    #![flags = 0x4001]
+    #![flags = 0x4009]
     #![version = (0x00, 0x11)]
 
     #[psp(0xC01EC829)]
