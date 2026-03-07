@@ -309,7 +309,12 @@ pub fn resolve_hostname(hostname: &[u8]) -> Result<Ipv4Addr, NetError> {
         return Err(NetError(ret));
     }
 
-    Ok(Ipv4Addr(addr.0.to_be_bytes()))
+    // sceNetResolverStartNtoA stores the IP in network byte order
+    // (big-endian) in memory. On little-endian MIPS, the u32 value has
+    // the bytes swapped relative to the in-memory layout. Use to_ne_bytes()
+    // to get the raw memory bytes (which are already in network order),
+    // not to_be_bytes() which would reverse them.
+    Ok(Ipv4Addr(addr.0.to_ne_bytes()))
 }
 
 fn make_sockaddr_in(addr: Ipv4Addr, port: u16) -> sys::sockaddr {
