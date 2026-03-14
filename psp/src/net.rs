@@ -36,15 +36,37 @@ use crate::sys;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct NetError(pub i32);
 
+/// Sentinel error code returned when the user cancels the WiFi dialog.
+///
+/// This is distinct from SCE error codes (which are negative) and allows
+/// callers to distinguish "user pressed Circle" from "connection failed".
+pub const NET_ERROR_CANCELLED: i32 = -2;
+
+impl NetError {
+    /// Returns `true` if this error represents user cancellation of the
+    /// WiFi dialog (pressed Circle / back button).
+    pub fn is_cancelled(&self) -> bool {
+        self.0 == NET_ERROR_CANCELLED
+    }
+}
+
 impl core::fmt::Debug for NetError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "NetError({:#010x})", self.0 as u32)
+        if self.is_cancelled() {
+            write!(f, "NetError(Cancelled)")
+        } else {
+            write!(f, "NetError({:#010x})", self.0 as u32)
+        }
     }
 }
 
 impl core::fmt::Display for NetError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "net error {:#010x}", self.0 as u32)
+        if self.is_cancelled() {
+            write!(f, "net dialog cancelled by user")
+        } else {
+            write!(f, "net error {:#010x}", self.0 as u32)
+        }
     }
 }
 
@@ -149,6 +171,20 @@ pub fn connect_ap_timeout(config_index: i32, timeout_ms: u32) -> Result<(), NetE
     Err(NetError(-1))
 }
 
+/// Check whether the PSP is currently connected to a WiFi access point.
+///
+/// Returns `true` if the WLAN interface has obtained an IP address.
+/// This is a lightweight check that does not show any dialogs or block.
+///
+/// Useful for background threads that need to verify connectivity
+/// without triggering the system dialog (which requires the main thread
+/// and GU access).
+pub fn is_connected() -> bool {
+    let mut state = sys::ApctlState::Disconnected;
+    let ret = unsafe { sys::sceNetApctlGetState(&mut state) };
+    ret >= 0 && state == sys::ApctlState::GotIp
+}
+
 /// Connect to WiFi using the PSP's built-in network configuration dialog.
 ///
 /// Shows a system dialog that lets the user select a stored WiFi profile
@@ -160,8 +196,20 @@ pub fn connect_ap_timeout(config_index: i32, timeout_ms: u32) -> Result<(), NetE
 /// list is finished before the dialog runs. The caller must re-open a
 /// new display list with `sceGuStart` after this function returns.
 ///
-/// Returns `Ok(())` when connected, or `Err` if the user cancelled or
-/// the dialog failed.
+/// # Important
+///
+/// **Must be called from the main thread only.** The dialog uses GU
+/// rendering and `sceDisplay` calls that are not safe from background
+/// threads. Calling from a background thread will freeze the EBOOT.
+///
+/// Use [`is_connected`] to check connectivity from any thread without
+/// showing a dialog.
+///
+/// # Return values
+///
+/// - `Ok(())` — Connected successfully.
+/// - `Err(e)` where `e.is_cancelled()` — User pressed Circle to cancel.
+/// - `Err(e)` — Dialog or connection failed (check `e.0` for SCE code).
 pub fn connect_dialog() -> Result<(), NetError> {
     // Check if we're already connected.
     let mut state = sys::ApctlState::Disconnected;
@@ -252,14 +300,15 @@ pub fn connect_dialog() -> Result<(), NetError> {
         }
     }
 
-    // Verify we actually got connected.
+    // Verify we actually got connected. If the dialog completed but
+    // we don't have an IP, the user cancelled (pressed Circle).
     let mut state = sys::ApctlState::Disconnected;
     let ret = unsafe { sys::sceNetApctlGetState(&mut state) };
     if ret < 0 {
         return Err(NetError(ret));
     }
     if state != sys::ApctlState::GotIp {
-        return Err(NetError(-1));
+        return Err(NetError(NET_ERROR_CANCELLED));
     }
 
     Ok(())
