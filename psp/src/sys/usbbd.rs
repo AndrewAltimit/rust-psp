@@ -15,6 +15,26 @@
 //! `sceUsbStart(b"USBBusDriver\0", ...)` to load it before calling any of
 //! these functions.
 //!
+//! # Important: Host claim_interface Kills Pending Recv
+//!
+//! When a USB host calls `claim_interface`, it resets the device's endpoints.
+//! Any pending `sceUsbbdReqRecv` will be silently cancelled — the completion
+//! callback never fires and the transfer chain dies permanently.
+//!
+//! To avoid this, do NOT queue a callback-driven recv until the host has
+//! finished its USB setup. Use a blocking recv-poll for the initial handshake:
+//! queue a recv, poll the request's `retcode`/`recvsize` fields from the main
+//! thread, and only switch to callback-driven mode after the first message
+//! is successfully received.
+//!
+//! # NID Swap Warning
+//!
+//! Some PSP documentation and older SDKs have the NIDs for `sceUsbbdClearFIFO`
+//! (0x951A24CC) and `sceUsbbdStall` (0xE65441C1) swapped. The NIDs in this
+//! module match PSPSDK and have been verified by testing on real hardware.
+//! Calling `sceUsbbdStall` when you meant `sceUsbbdClearFIFO` will stall
+//! the endpoint, preventing all subsequent transfers.
+//!
 //! # References
 //!
 //! - [PSPSDK pspusbbus.h](https://pspdev.github.io/pspsdk/pspusbbus_8h.html)
