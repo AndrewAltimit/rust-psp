@@ -129,6 +129,11 @@ mod sctrl;
 #[cfg(feature = "kernel")]
 pub use sctrl::*;
 
+#[cfg(feature = "kernel")]
+mod usbbd;
+#[cfg(feature = "kernel")]
+pub use usbbd::*;
+
 pub mod vfpu_context;
 
 use core::ffi::c_void;
