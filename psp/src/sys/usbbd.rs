@@ -4,6 +4,13 @@
 //! drivers. They allow registering a USB device driver with custom endpoints,
 //! descriptors, and callbacks, then sending/receiving bulk data.
 //!
+//! # Tested On
+//!
+//! - PSP-3001 (Slim) — 6.61 ARK-4, hi-speed (480 Mbps) bulk transfers verified
+//! - PSP-1001 (Fat) — 6.61 ARK-4, driver registration works but USB enumeration
+//!   does not complete (stays at state 0x121, never reaches CONFIGURED 0x222).
+//!   Different Tachyon chip may require different NID resolution path.
+//!
 //! # NIDs
 //!
 //! NIDs verified against PSPSDK `sceUsbBus_driver.S` stubs and confirmed by
