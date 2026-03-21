@@ -55,6 +55,8 @@ mod eabi;
 #[cfg(not(feature = "stub-only"))]
 pub mod font;
 pub mod framebuffer;
+#[cfg(feature = "kernel")]
+pub mod gpio;
 pub mod gu_ext;
 #[cfg(feature = "kernel")]
 pub mod hook;
@@ -95,6 +97,11 @@ pub mod usb;
 #[cfg(not(feature = "stub-only"))]
 pub mod vram_alloc;
 pub mod wlan;
+
+#[cfg(feature = "kernel")]
+pub mod syscon;
+#[cfg(feature = "kernel")]
+pub mod sysreg;
 
 #[cfg(not(feature = "stub-only"))]
 mod alloc_impl;
