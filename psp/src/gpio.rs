@@ -115,8 +115,14 @@ pub fn read_port() -> Option<u32> {
     Some(unsafe { f() })
 }
 
-/// Read the state of a single GPIO pin.
+/// Read the state of a single GPIO pin (0-31).
+///
+/// Returns `None` if `pin >= 32`, [`init()`] has not been called,
+/// or the NID was not resolved.
 pub fn read_pin(pin: u32) -> Option<bool> {
+    if pin >= 32 {
+        return None;
+    }
     read_port().map(|v| v & (1 << pin) != 0)
 }
 
