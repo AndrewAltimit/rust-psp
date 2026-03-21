@@ -65,8 +65,28 @@ psp_extern! {
     #![flags = 0x4001]
     #![version = (0x00, 0x00)]
 
+    #[psp(0xFBC85E74)]
+    /// Set the basic mode of a GPIO pin (direction control).
+    ///
+    /// # Parameters
+    ///
+    /// - `pin`: GPIO pin number (0-31)
+    /// - `mode`: Pin mode (0 = input, 1 = output)
+    ///
+    /// # Return Value
+    ///
+    /// Previous mode on success, < 0 on error.
+    ///
+    /// # Note
+    ///
+    /// This controls the Direction register (+0x10). For full output enable
+    /// including the Output Enable MUX, use [`sceGpioSetPortMode2`] instead.
+    pub fn sceGpioSetPortMode(pin: i32, mode: i32) -> i32;
+
     #[psp(0x317D9D2C)]
-    /// Set the mode of a GPIO pin.
+    /// Set the full output mode of a GPIO pin (direction + output enable MUX).
+    ///
+    /// This is the function used by `usb.prx` for VBUS control.
     ///
     /// # Parameters
     ///
@@ -82,7 +102,7 @@ psp_extern! {
     /// This function writes to the Output Enable register (+0x24). On TA-090v2
     /// hardware, this register is silicon-locked and writes are silently
     /// discarded for most pins.
-    pub fn sceGpioSetPortMode(pin: i32, mode: i32) -> i32;
+    pub fn sceGpioSetPortMode2(pin: i32, mode: i32) -> i32;
 
     #[psp(0x310F0CCF)]
     /// Set GPIO output pins (drive high).

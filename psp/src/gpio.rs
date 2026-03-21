@@ -84,7 +84,24 @@ pub fn capture_status() -> u32 {
     val as u32
 }
 
-/// Set a GPIO pin mode (enable/disable output).
+/// Set basic GPIO pin direction (input/output).
+///
+/// Uses `sceGpioSetPortMode` which controls the Direction register (+0x10).
+///
+/// # Parameters
+///
+/// - `pin`: Pin number (0-31)
+/// - `mode`: `0` = input, `1` = output
+pub fn set_pin_mode(pin: u32, mode: i32) -> Result<(), GpioError> {
+    let ret = unsafe { crate::sys::sceGpioSetPortMode(pin as i32, mode) };
+    if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
+}
+
+/// Set full GPIO pin output mode (direction + output enable MUX).
+///
+/// Uses `sceGpioSetPortMode2` which is the function `usb.prx` uses for
+/// VBUS control. This writes to both the Direction register and the
+/// Output Enable register.
 ///
 /// # Parameters
 ///
@@ -96,8 +113,8 @@ pub fn capture_status() -> u32 {
 /// On TA-090v2 hardware, the Output Enable register is silicon-locked.
 /// This function may return success but the output MUX won't actually
 /// latch for locked pins (e.g., pin 23).
-pub fn set_pin_mode(pin: u32, mode: i32) -> Result<(), GpioError> {
-    let ret = unsafe { crate::sys::sceGpioSetPortMode(pin as i32, mode) };
+pub fn set_pin_mode2(pin: u32, mode: i32) -> Result<(), GpioError> {
+    let ret = unsafe { crate::sys::sceGpioSetPortMode2(pin as i32, mode) };
     if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
 }
 
