@@ -68,7 +68,10 @@ pub const NID_GPIO_PORT_CLEAR: u32 = 0x103C3EB2;
 pub const NID_GPIO_PORT_READ: u32 = 0x4250D44A;
 
 /// NID for `sceGpioGetCapturePort` — read interrupt/capture status.
-pub const NID_GPIO_GET_CAPTURE_PORT: u32 = 0xC6928224;
+pub const NID_GPIO_GET_CAPTURE_PORT: u32 = 0xF4524F3C;
+
+/// NID for `sceGpioGetPortMode` — read current pin mode.
+pub const NID_GPIO_GET_PORT_MODE: u32 = 0xC6928224;
 
 /// Module name for NID resolution.
 pub const GPIO_MODULE: &[u8] = b"sceLowIO_Driver\0";
