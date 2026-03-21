@@ -66,7 +66,7 @@ pub unsafe fn init() -> u32 {
 
     macro_rules! try_resolve {
         ($nid:expr, $slot:ident) => {
-            if let Some(a) = unsafe { crate::hook::find_function(m, l, $nid) } {
+            if let Some(a) = crate::hook::find_function(m, l, $nid) {
                 $slot = Some(core::mem::transmute(a));
                 count += 1;
             }
