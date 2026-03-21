@@ -134,6 +134,21 @@ mod usbbd;
 #[cfg(feature = "kernel")]
 pub use usbbd::*;
 
+#[cfg(feature = "kernel")]
+mod gpio;
+#[cfg(feature = "kernel")]
+pub use gpio::*;
+
+#[cfg(feature = "kernel")]
+mod syscon;
+#[cfg(feature = "kernel")]
+pub use syscon::*;
+
+#[cfg(feature = "kernel")]
+mod sysreg;
+#[cfg(feature = "kernel")]
+pub use sysreg::*;
+
 pub mod vfpu_context;
 
 use core::ffi::c_void;

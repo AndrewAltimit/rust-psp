@@ -61,6 +61,8 @@ pub mod hook;
 #[cfg(not(feature = "stub-only"))]
 pub mod http;
 #[cfg(feature = "kernel")]
+pub mod gpio;
+#[cfg(feature = "kernel")]
 pub mod hw;
 #[cfg(not(feature = "stub-only"))]
 pub mod image;
@@ -95,6 +97,11 @@ pub mod usb;
 #[cfg(not(feature = "stub-only"))]
 pub mod vram_alloc;
 pub mod wlan;
+
+#[cfg(feature = "kernel")]
+pub mod syscon;
+#[cfg(feature = "kernel")]
+pub mod sysreg;
 
 #[cfg(not(feature = "stub-only"))]
 mod alloc_impl;
