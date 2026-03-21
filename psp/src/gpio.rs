@@ -1,36 +1,28 @@
 //! High-level GPIO access for kernel-mode PSP applications.
 //!
-//! Provides safe wrappers around the PSP's GPIO controller for reading pin
-//! states and controlling output pins (where hardware allows).
+//! Resolves GPIO driver functions at runtime via `psp::hook::find_function()`.
+//! Call [`init()`] once before using any other function.
 //!
-//! # Hardware Limitations
+//! # Why runtime resolution?
 //!
-//! The GPIO Output Enable register is silicon-locked on some hardware
-//! revisions (confirmed on TA-090v2/PSP-3001). On these models, only pin
-//! reading is reliable — output control via [`set_pin`] and [`clear_pin`]
-//! may silently fail because the output MUX never latches.
-//!
-//! # Kernel Mode Required
-//!
-//! All functions require `feature = "kernel"` and the module must be declared
-//! with `psp::module_kernel!()`.
+//! `sceGpio_driver` is a kernel driver library. `psp_extern!` import stubs
+//! use the syscall table which doesn't work correctly for kernel driver
+//! calls from kernel-mode modules. `sceGpioPortSet` via import stubs crashes
+//! on pins 29-31; the same NID via `find_function()` + direct call works.
 //!
 //! # Example
 //!
 //! ```ignore
 //! use psp::gpio;
 //!
-//! // Read all GPIO pin states
-//! let pins = gpio::read_port();
-//! let pin23_high = pins & (1 << 23) != 0;
-//!
-//! // Check a specific pin
-//! if gpio::read_pin(23) {
-//!     // USB VBUS MOSFET gate is high
-//! }
+//! unsafe { gpio::init(); }
+//! let pins = gpio::read_port().unwrap_or(0);
 //! ```
 
-/// Error from a GPIO operation, wrapping the raw SCE error code.
+use crate::sys::gpio as nids;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Error from a GPIO operation.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct GpioError(pub i32);
 
@@ -53,92 +45,119 @@ pub mod pins {
     /// USB PHY transceiver. Disrupts USB communication if toggled.
     pub const USB_PHY: u32 = 19;
     /// USB VBUS MOSFET gate. Controls 5V power output on the USB port.
-    /// Output is silicon-locked on TA-090v2 — reads work, writes don't latch.
+    /// Output is silicon-locked on TA-090v2.
     pub const USB_VBUS: u32 = 23;
+}
+
+// Function pointer types matching the kernel driver signatures.
+type PortReadFn = unsafe extern "C" fn() -> u32;
+type PortSetFn = unsafe extern "C" fn(mask: u32) -> i32;
+type PortClearFn = unsafe extern "C" fn(mask: u32) -> i32;
+type SetPortModeFn = unsafe extern "C" fn(pin: u32, mode: u32) -> i32;
+type GetCaptureFn = unsafe extern "C" fn() -> u32;
+
+static mut PORT_READ: Option<PortReadFn> = None;
+static mut PORT_SET: Option<PortSetFn> = None;
+static mut PORT_CLEAR: Option<PortClearFn> = None;
+static mut SET_PORT_MODE: Option<SetPortModeFn> = None;
+static mut SET_PORT_MODE2: Option<SetPortModeFn> = None;
+static mut GET_CAPTURE: Option<GetCaptureFn> = None;
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Resolve GPIO driver NIDs. Call once before using other functions.
+///
+/// Returns the number of successfully resolved functions (0-6).
+///
+/// # Safety
+///
+/// Must be called from kernel mode.
+pub unsafe fn init() -> u32 {
+    let m = nids::GPIO_MODULE.as_ptr();
+    let l = nids::GPIO_LIBRARY.as_ptr();
+    let mut count = 0u32;
+
+    unsafe {
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_READ) {
+            PORT_READ = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_SET) {
+            PORT_SET = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_CLEAR) {
+            PORT_CLEAR = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_SET_PORT_MODE) {
+            SET_PORT_MODE = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_SET_PORT_MODE2) {
+            SET_PORT_MODE2 = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_GET_CAPTURE_PORT) {
+            GET_CAPTURE = Some(core::mem::transmute(addr));
+            count += 1;
+        }
+    }
+
+    INITIALIZED.store(true, Ordering::Release);
+    count
 }
 
 /// Read the state of all GPIO port 0 pins.
 ///
-/// Returns a 32-bit value where each bit represents a pin (1=high, 0=low).
-pub fn read_port() -> u32 {
-    let val = unsafe { crate::sys::sceGpioPortRead() };
-    val as u32
+/// Returns `None` if [`init()`] has not been called or NID was not resolved.
+pub fn read_port() -> Option<u32> {
+    let f = unsafe { PORT_READ }?;
+    Some(unsafe { f() })
 }
 
 /// Read the state of a single GPIO pin.
-///
-/// # Parameters
-///
-/// - `pin`: Pin number (0-31)
-///
-/// # Returns
-///
-/// `true` if the pin is high, `false` if low.
-pub fn read_pin(pin: u32) -> bool {
-    read_port() & (1 << pin) != 0
+pub fn read_pin(pin: u32) -> Option<bool> {
+    read_port().map(|v| v & (1 << pin) != 0)
 }
 
 /// Read the GPIO interrupt/capture status.
-pub fn capture_status() -> u32 {
-    let val = unsafe { crate::sys::sceGpioGetCapturePort() };
-    val as u32
+pub fn capture_status() -> Option<u32> {
+    let f = unsafe { GET_CAPTURE }?;
+    Some(unsafe { f() })
 }
 
 /// Set basic GPIO pin direction (input/output).
 ///
-/// Uses `sceGpioSetPortMode` which controls the Direction register (+0x10).
+/// Uses `sceGpioSetPortMode` (NID 0xFBC85E74). Mode: 0=input, 1=output.
 ///
-/// # Parameters
-///
-/// - `pin`: Pin number (0-31)
-/// - `mode`: `0` = input, `1` = output
-pub fn set_pin_mode(pin: u32, mode: i32) -> Result<(), GpioError> {
-    let ret = unsafe { crate::sys::sceGpioSetPortMode(pin as i32, mode) };
-    if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
+/// **Warning:** Actually drives pins. Crashes on pins 29-31+ on TA-090v2.
+pub fn set_pin_mode(pin: u32, mode: i32) -> Option<i32> {
+    let f = unsafe { SET_PORT_MODE }?;
+    Some(unsafe { f(pin, mode as u32) })
 }
 
 /// Set full GPIO pin output mode (direction + output enable MUX).
 ///
-/// Uses `sceGpioSetPortMode2` which is the function `usb.prx` uses for
-/// VBUS control. This writes to both the Direction register and the
-/// Output Enable register.
-///
-/// # Parameters
-///
-/// - `pin`: Pin number (0-31)
-/// - `mode`: `0` = disable output, `2` = enable output
-///
-/// # Warning
-///
-/// On TA-090v2 hardware, the Output Enable register is silicon-locked.
-/// This function may return success but the output MUX won't actually
-/// latch for locked pins (e.g., pin 23).
-pub fn set_pin_mode2(pin: u32, mode: i32) -> Result<(), GpioError> {
-    let ret = unsafe { crate::sys::sceGpioSetPortMode2(pin as i32, mode) };
-    if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
+/// Uses `sceGpioSetPortMode2` (NID 0x317D9D2C). Mode: 0=disable, 2=enable.
+/// Safe for probing — Output Enable register is silicon-locked on TA-090v2.
+pub fn set_pin_mode2(pin: u32, mode: i32) -> Option<i32> {
+    let f = unsafe { SET_PORT_MODE2 }?;
+    Some(unsafe { f(pin, mode as u32) })
 }
 
-/// Drive a GPIO pin high.
-///
-/// # Parameters
-///
-/// - `pin`: Pin number (0-31)
-///
-/// # Note
-///
-/// Requires the pin to be configured for output via [`set_pin_mode`] and
-/// the Output Enable register to be writable (hardware-dependent).
-pub fn set_pin(pin: u32) -> Result<(), GpioError> {
-    let ret = unsafe { crate::sys::sceGpioPortSet(1i32 << pin) };
-    if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
+/// Drive GPIO pins high.
+pub fn set_pins(mask: u32) -> Option<i32> {
+    let f = unsafe { PORT_SET }?;
+    Some(unsafe { f(mask) })
 }
 
-/// Drive a GPIO pin low.
-///
-/// # Parameters
-///
-/// - `pin`: Pin number (0-31)
-pub fn clear_pin(pin: u32) -> Result<(), GpioError> {
-    let ret = unsafe { crate::sys::sceGpioPortClear(1i32 << pin) };
-    if ret < 0 { Err(GpioError(ret)) } else { Ok(()) }
+/// Drive GPIO pins low.
+pub fn clear_pins(mask: u32) -> Option<i32> {
+    let f = unsafe { PORT_CLEAR }?;
+    Some(unsafe { f(mask) })
+}
+
+/// Check if GPIO functions have been initialized.
+pub fn is_initialized() -> bool {
+    INITIALIZED.load(Ordering::Acquire)
 }

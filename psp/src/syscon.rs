@@ -1,26 +1,23 @@
 //! High-level Syscon (System Controller) access for kernel-mode PSP
 //! applications.
 //!
-//! The Syscon is a secondary microcontroller on the PSP motherboard that
-//! manages power, battery, temperature, and other low-level hardware. This
-//! module provides safe wrappers for querying hardware state.
-//!
-//! # Kernel Mode Required
-//!
-//! All functions require `feature = "kernel"` and the module must be declared
-//! with `psp::module_kernel!()`.
+//! Resolves Syscon driver functions at runtime via `psp::hook::find_function()`.
+//! Call [`init()`] once before using any other function.
 //!
 //! # Example
 //!
 //! ```ignore
 //! use psp::syscon;
 //!
-//! let version = syscon::baryon_version();
+//! unsafe { syscon::init(); }
+//! let version = syscon::baryon_version().unwrap_or(0);
 //! let battery = syscon::battery_percent().unwrap_or(0);
-//! let ac = syscon::is_ac_connected();
 //! ```
 
-/// Error from a Syscon operation, wrapping the raw SCE error code.
+use crate::sys::syscon as nids;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Error from a Syscon operation.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SysconError(pub i32);
 
@@ -36,99 +33,150 @@ impl core::fmt::Display for SysconError {
     }
 }
 
+type BaryonVersionFn = unsafe extern "C" fn() -> i32;
+type GetI32Fn = unsafe extern "C" fn(*mut i32) -> i32;
+type IsAcFn = unsafe extern "C" fn() -> i32;
+type CommonWriteFn = unsafe extern "C" fn(i32, *const u8, i32) -> i32;
+type CommonReadFn = unsafe extern "C" fn(i32, *mut u8, i32) -> i32;
+
+static mut BARYON_VERSION: Option<BaryonVersionFn> = None;
+static mut GET_POWER_STATUS: Option<GetI32Fn> = None;
+static mut GET_BATTERY_REMAIN: Option<GetI32Fn> = None;
+static mut GET_BATTERY_VOLT: Option<GetI32Fn> = None;
+static mut GET_BATTERY_TEMP: Option<GetI32Fn> = None;
+static mut IS_AC_SUPPLIED: Option<IsAcFn> = None;
+static mut COMMON_WRITE: Option<CommonWriteFn> = None;
+static mut COMMON_READ: Option<CommonReadFn> = None;
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Resolve a NID from Syscon driver, trying multiple module names.
+unsafe fn resolve(nid: u32) -> Option<*mut u8> {
+    let modules = [nids::SYSCON_MODULE, nids::SYSCON_MODULE_ALT];
+    let l = nids::SYSCON_LIBRARY.as_ptr();
+    for m in &modules {
+        if let Some(addr) = unsafe { crate::hook::find_function(m.as_ptr(), l, nid) } {
+            return Some(addr);
+        }
+    }
+    None
+}
+
+/// Resolve Syscon driver NIDs. Call once before using other functions.
+///
+/// Returns the number of successfully resolved functions.
+///
+/// # Safety
+///
+/// Must be called from kernel mode.
+pub unsafe fn init() -> u32 {
+    let mut count = 0u32;
+
+    unsafe {
+        if let Some(a) = resolve(nids::NID_SYSCON_GET_BARYON_VERSION) {
+            BARYON_VERSION = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_GET_POWER_STATUS) {
+            GET_POWER_STATUS = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_GET_BATTERY_REMAIN) {
+            GET_BATTERY_REMAIN = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_GET_BATTERY_VOLT) {
+            GET_BATTERY_VOLT = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_GET_BATTERY_TEMP) {
+            GET_BATTERY_TEMP = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_IS_AC_SUPPLIED) {
+            IS_AC_SUPPLIED = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_COMMON_WRITE) {
+            COMMON_WRITE = Some(core::mem::transmute(a));
+            count += 1;
+        }
+        if let Some(a) = resolve(nids::NID_SYSCON_COMMON_READ) {
+            COMMON_READ = Some(core::mem::transmute(a));
+            count += 1;
+        }
+    }
+
+    INITIALIZED.store(true, Ordering::Release);
+    count
+}
+
 /// Read the Baryon (Syscon) hardware version.
-///
-/// # Returns
-///
-/// Version as a 32-bit value (e.g., `0x00040600` for PSP-3001).
-pub fn baryon_version() -> u32 {
-    let val = unsafe { crate::sys::sceSysconGetBaryonVersion() };
-    val as u32
+pub fn baryon_version() -> Option<u32> {
+    let f = unsafe { BARYON_VERSION }?;
+    Some(unsafe { f() } as u32)
 }
 
-/// Read the battery remaining capacity as a percentage (0-100).
-pub fn battery_percent() -> Result<i32, SysconError> {
-    let mut percent: i32 = 0;
-    let ret = unsafe { crate::sys::sceSysconGetBatteryRemain(&mut percent) };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(percent) }
+/// Read battery remaining capacity as a percentage (0-100).
+pub fn battery_percent() -> Option<Result<i32, SysconError>> {
+    let f = unsafe { GET_BATTERY_REMAIN }?;
+    let mut val: i32 = 0;
+    let ret = unsafe { f(&mut val) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
 }
 
-/// Read the battery voltage in millivolts.
-pub fn battery_voltage() -> Result<i32, SysconError> {
-    let mut mv: i32 = 0;
-    let ret = unsafe { crate::sys::sceSysconGetBatteryVolt(&mut mv) };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(mv) }
+/// Read battery voltage in millivolts.
+pub fn battery_voltage() -> Option<Result<i32, SysconError>> {
+    let f = unsafe { GET_BATTERY_VOLT }?;
+    let mut val: i32 = 0;
+    let ret = unsafe { f(&mut val) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
 }
 
-/// Read the battery temperature in degrees Celsius.
-pub fn battery_temp() -> Result<i32, SysconError> {
-    let mut temp: i32 = 0;
-    let ret = unsafe { crate::sys::sceSysconGetBatteryTemp(&mut temp) };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(temp) }
+/// Read battery temperature in degrees Celsius.
+pub fn battery_temp() -> Option<Result<i32, SysconError>> {
+    let f = unsafe { GET_BATTERY_TEMP }?;
+    let mut val: i32 = 0;
+    let ret = unsafe { f(&mut val) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
 }
 
 /// Read the power supply status word.
-pub fn power_status() -> Result<i32, SysconError> {
-    let mut status: i32 = 0;
-    let ret = unsafe { crate::sys::sceSysconGetPowerStatus(&mut status) };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(status) }
+pub fn power_status() -> Option<Result<i32, SysconError>> {
+    let f = unsafe { GET_POWER_STATUS }?;
+    let mut val: i32 = 0;
+    let ret = unsafe { f(&mut val) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
 }
 
 /// Check if the AC adapter is connected.
-pub fn is_ac_connected() -> bool {
-    let ret = unsafe { crate::sys::sceSysconIsAcSupplied() };
-    ret == 1
+pub fn is_ac_connected() -> Option<bool> {
+    let f = unsafe { IS_AC_SUPPLIED }?;
+    Some(unsafe { f() } == 1)
 }
 
-/// Send a raw Syscon command and read the response.
-///
-/// This provides low-level access to the Syscon SPI interface for commands
-/// not covered by the high-level API.
-///
-/// # Parameters
-///
-/// - `cmd`: Syscon command byte
-/// - `response`: Output buffer for the response bytes
-///
-/// # Returns
-///
-/// Number of response bytes read on success.
+/// Send a raw Syscon GET command and read the response.
 ///
 /// # Warning
 ///
-/// Some commands are dangerous:
-/// - `0x34`: Hard crash
-/// - `0x45`: Immediate shutdown/reboot
-pub fn raw_read(cmd: u8, response: &mut [u8]) -> Result<i32, SysconError> {
-    let ret = unsafe {
-        crate::sys::sceSysconCommonRead(
-            cmd as i32,
-            response.as_mut_ptr(),
-            response.len() as i32,
-        )
-    };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(ret) }
+/// Command 0x34 causes hard crash. Command 0x45 causes shutdown.
+pub fn raw_read(cmd: u8, response: &mut [u8]) -> Option<Result<i32, SysconError>> {
+    let f = unsafe { COMMON_READ }?;
+    let ret = unsafe { f(cmd as i32, response.as_mut_ptr(), response.len() as i32) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(ret) })
 }
 
 /// Send a raw Syscon SET command with data.
 ///
-/// # Parameters
-///
-/// - `cmd`: Syscon command byte (SET commands, e.g., 0x47)
-/// - `data`: Command data bytes
-///
 /// # Warning
 ///
-/// Some commands are dangerous:
-/// - `0x34`: Hard crash
-/// - `0x45`: Immediate shutdown/reboot
-pub fn raw_write(cmd: u8, data: &[u8]) -> Result<(), SysconError> {
-    let ret = unsafe {
-        crate::sys::sceSysconCommonWrite(
-            cmd as i32,
-            data.as_ptr(),
-            data.len() as i32,
-        )
-    };
-    if ret < 0 { Err(SysconError(ret)) } else { Ok(()) }
+/// Command 0x34 causes hard crash. Command 0x45 causes shutdown.
+pub fn raw_write(cmd: u8, data: &[u8]) -> Option<Result<(), SysconError>> {
+    let f = unsafe { COMMON_WRITE }?;
+    let ret = unsafe { f(cmd as i32, data.as_ptr(), data.len() as i32) };
+    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(()) })
+}
+
+/// Check if Syscon functions have been initialized.
+pub fn is_initialized() -> bool {
+    INITIALIZED.load(Ordering::Acquire)
 }

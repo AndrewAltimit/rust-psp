@@ -1,7 +1,13 @@
 //! PSP GPIO driver (sceGpio_driver) — kernel-mode API.
 //!
-//! The PSP's GPIO controller at `0xBE240000` provides pin-level I/O for
-//! controlling hardware peripherals (LCD backlight, USB VBUS MOSFET, etc.).
+//! **Important:** These are kernel driver functions that must be resolved at
+//! runtime via `psp::hook::find_function()`, NOT via `psp_extern!` import
+//! stubs. `psp_extern!` generates syscall table stubs that don't work
+//! correctly for kernel driver libraries called from kernel-mode modules.
+//! The `sceGpioPortSet` NID crashes on pins 29-31 when called via import
+//! stubs but works correctly via `find_function()` + direct call.
+//!
+//! Use the high-level `psp::gpio` module which handles resolution internally.
 //!
 //! # Register Map (TA-090v2, PSP-3001)
 //!
@@ -20,24 +26,12 @@
 //! | +0x40  | Port 0 AltFunc      | **Silicon-locked on TA-090v2**           |
 //! | +0x48  | Port 1 AltFunc      | Polled for busy flag (bits 0-1)          |
 //!
-//! # Output Path
+//! # sceGpioSetPortMode vs sceGpioSetPortMode2
 //!
-//! From `sceGpioSetPortMode2` decompilation, enabling GPIO output requires
-//! four steps. If any step fails, the output does not latch:
-//!
-//! ```text
-//! 1. BC10007C |= (1 << pin)       // sceSysreg port enable
-//! 2. +0x10 Direction |= (1 << pin)  // output mode
-//! 3. +0x24 OutputEnable = (1 << pin) // output MUX (LOCKED on some HW)
-//! 4. +0x14 Set = (1 << pin)         // drive high
-//! ```
-//!
-//! # Silicon Lock
-//!
-//! On TA-090v2 (PSP-3001), the Output Enable register (+0x24) and AltFunc
-//! register (+0x40) are locked by the Tachyon mask ROM during the earliest
-//! boot phase. No kernel-level code can unlock them. This prevents software
-//! control of pin 23 (USB VBUS MOSFET) on this hardware revision.
+//! | Function            | NID        | Modes   | Effect                           |
+//! |---------------------|------------|---------|----------------------------------|
+//! | `sceGpioSetPortMode`  | 0xFBC85E74 | 0/1     | Direction register (+0x10) only   |
+//! | `sceGpioSetPortMode2` | 0x317D9D2C | 0/2     | Direction + Output Enable (+0x24) |
 //!
 //! # Known Pin Functions (PSP-3001)
 //!
@@ -45,102 +39,38 @@
 //! |-----|-------------------|------------------------------------|
 //! | 3   | LCD backlight     | Toggling turns off screen          |
 //! | 4   | Critical (crash)  | Unknown function                   |
+//! | 6,7 | Unknown (writable)| SetPortMode2 returns 0             |
 //! | 19  | USB PHY           | Disrupts USB transceiver           |
 //! | 23  | VBUS MOSFET       | Controls 5V USB power output       |
 //! | 24  | Critical (crash)  | Unknown function                   |
+//! | 25  | Unknown (writable)| SetPortMode2 returns 0             |
 //! | 26  | Critical (crash)  | Crashes during SetPortMode         |
-//!
-//! # Kernel Mode Required
-//!
-//! All functions require `feature = "kernel"` and the module must be declared
-//! with `psp::module_kernel!()`.
+//! | 29-31 | Critical (crash)| Crash when driven via PortSet/SetPortMode |
 //!
 //! # NIDs
 //!
-//! Resolved from decrypted `usb.prx` on PSP-3001 6.61. The `sceGpio_driver`
-//! library exports these functions for kernel-mode callers.
+//! Resolved from decrypted `usb.prx` on PSP-3001 6.61.
 
-psp_extern! {
-    #![name = "sceGpio_driver"]
-    #![flags = 0x4001]
-    #![version = (0x00, 0x00)]
+/// NID for `sceGpioSetPortMode` — basic direction control (mode 0=input, 1=output).
+pub const NID_GPIO_SET_PORT_MODE: u32 = 0xFBC85E74;
 
-    #[psp(0xFBC85E74)]
-    /// Set the basic mode of a GPIO pin (direction control).
-    ///
-    /// # Parameters
-    ///
-    /// - `pin`: GPIO pin number (0-31)
-    /// - `mode`: Pin mode (0 = input, 1 = output)
-    ///
-    /// # Return Value
-    ///
-    /// Previous mode on success, < 0 on error.
-    ///
-    /// # Note
-    ///
-    /// This controls the Direction register (+0x10). For full output enable
-    /// including the Output Enable MUX, use [`sceGpioSetPortMode2`] instead.
-    pub fn sceGpioSetPortMode(pin: i32, mode: i32) -> i32;
+/// NID for `sceGpioSetPortMode2` — full output enable (mode 0=disable, 2=enable).
+/// Used by `usb.prx` for VBUS control.
+pub const NID_GPIO_SET_PORT_MODE2: u32 = 0x317D9D2C;
 
-    #[psp(0x317D9D2C)]
-    /// Set the full output mode of a GPIO pin (direction + output enable MUX).
-    ///
-    /// This is the function used by `usb.prx` for VBUS control.
-    ///
-    /// # Parameters
-    ///
-    /// - `pin`: GPIO pin number (0-31)
-    /// - `mode`: Pin mode (0 = disable output, 2 = enable output)
-    ///
-    /// # Return Value
-    ///
-    /// 0 on success, < 0 on error.
-    ///
-    /// # Note
-    ///
-    /// This function writes to the Output Enable register (+0x24). On TA-090v2
-    /// hardware, this register is silicon-locked and writes are silently
-    /// discarded for most pins.
-    pub fn sceGpioSetPortMode2(pin: i32, mode: i32) -> i32;
+/// NID for `sceGpioPortSet` — set output pins (write 1 bits to set).
+pub const NID_GPIO_PORT_SET: u32 = 0x310F0CCF;
 
-    #[psp(0x310F0CCF)]
-    /// Set GPIO output pins (drive high).
-    ///
-    /// # Parameters
-    ///
-    /// - `mask`: Bitmask of pins to set (e.g., `1 << 23` for pin 23)
-    ///
-    /// # Return Value
-    ///
-    /// 0 on success, < 0 on error.
-    pub fn sceGpioPortSet(mask: i32) -> i32;
+/// NID for `sceGpioPortClear` — clear output pins (write 1 bits to clear).
+pub const NID_GPIO_PORT_CLEAR: u32 = 0x103C3EB2;
 
-    #[psp(0x103C3EB2)]
-    /// Clear GPIO output pins (drive low).
-    ///
-    /// # Parameters
-    ///
-    /// - `mask`: Bitmask of pins to clear (e.g., `1 << 23` for pin 23)
-    ///
-    /// # Return Value
-    ///
-    /// 0 on success, < 0 on error.
-    pub fn sceGpioPortClear(mask: i32) -> i32;
+/// NID for `sceGpioPortRead` — read port 0 pin state.
+pub const NID_GPIO_PORT_READ: u32 = 0x4250D44A;
 
-    #[psp(0x4250D44A)]
-    /// Read the current state of GPIO port 0.
-    ///
-    /// # Return Value
-    ///
-    /// 32-bit value with each bit representing a pin state (1=high, 0=low).
-    pub fn sceGpioPortRead() -> i32;
+/// NID for `sceGpioGetCapturePort` — read interrupt/capture status.
+pub const NID_GPIO_GET_CAPTURE_PORT: u32 = 0xC6928224;
 
-    #[psp(0xC6928224)]
-    /// Read the interrupt/capture status of GPIO pins.
-    ///
-    /// # Return Value
-    ///
-    /// 32-bit interrupt status value.
-    pub fn sceGpioGetCapturePort() -> i32;
-}
+/// Module name for NID resolution.
+pub const GPIO_MODULE: &[u8] = b"sceLowIO_Driver\0";
+/// Library name for NID resolution.
+pub const GPIO_LIBRARY: &[u8] = b"sceGpio_driver\0";

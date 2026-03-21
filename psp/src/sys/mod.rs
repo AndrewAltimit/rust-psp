@@ -135,19 +135,13 @@ mod usbbd;
 pub use usbbd::*;
 
 #[cfg(feature = "kernel")]
-mod gpio;
-#[cfg(feature = "kernel")]
-pub use gpio::*;
+pub mod gpio;
 
 #[cfg(feature = "kernel")]
-mod syscon;
-#[cfg(feature = "kernel")]
-pub use syscon::*;
+pub mod syscon;
 
 #[cfg(feature = "kernel")]
-mod sysreg;
-#[cfg(feature = "kernel")]
-pub use sysreg::*;
+pub mod sysreg;
 
 pub mod vfpu_context;
 
