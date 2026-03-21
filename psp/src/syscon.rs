@@ -121,7 +121,11 @@ pub fn battery_percent() -> Option<Result<i32, SysconError>> {
     let f = unsafe { GET_BATTERY_REMAIN }?;
     let mut val: i32 = 0;
     let ret = unsafe { f(&mut val) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(val)
+    })
 }
 
 /// Read battery voltage in millivolts.
@@ -129,7 +133,11 @@ pub fn battery_voltage() -> Option<Result<i32, SysconError>> {
     let f = unsafe { GET_BATTERY_VOLT }?;
     let mut val: i32 = 0;
     let ret = unsafe { f(&mut val) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(val)
+    })
 }
 
 /// Read battery temperature in degrees Celsius.
@@ -137,7 +145,11 @@ pub fn battery_temp() -> Option<Result<i32, SysconError>> {
     let f = unsafe { GET_BATTERY_TEMP }?;
     let mut val: i32 = 0;
     let ret = unsafe { f(&mut val) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(val)
+    })
 }
 
 /// Read the power supply status word.
@@ -145,7 +157,11 @@ pub fn power_status() -> Option<Result<i32, SysconError>> {
     let f = unsafe { GET_POWER_STATUS }?;
     let mut val: i32 = 0;
     let ret = unsafe { f(&mut val) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(val) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(val)
+    })
 }
 
 /// Check if the AC adapter is connected.
@@ -162,7 +178,11 @@ pub fn is_ac_connected() -> Option<bool> {
 pub fn raw_read(cmd: u8, response: &mut [u8]) -> Option<Result<i32, SysconError>> {
     let f = unsafe { COMMON_READ }?;
     let ret = unsafe { f(cmd as i32, response.as_mut_ptr(), response.len() as i32) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(ret) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(ret)
+    })
 }
 
 /// Send a raw Syscon SET command with data.
@@ -173,7 +193,11 @@ pub fn raw_read(cmd: u8, response: &mut [u8]) -> Option<Result<i32, SysconError>
 pub fn raw_write(cmd: u8, data: &[u8]) -> Option<Result<(), SysconError>> {
     let f = unsafe { COMMON_WRITE }?;
     let ret = unsafe { f(cmd as i32, data.as_ptr(), data.len() as i32) };
-    Some(if ret < 0 { Err(SysconError(ret)) } else { Ok(()) })
+    Some(if ret < 0 {
+        Err(SysconError(ret))
+    } else {
+        Ok(())
+    })
 }
 
 /// Check if Syscon functions have been initialized.

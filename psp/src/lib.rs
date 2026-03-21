@@ -55,13 +55,13 @@ mod eabi;
 #[cfg(not(feature = "stub-only"))]
 pub mod font;
 pub mod framebuffer;
+#[cfg(feature = "kernel")]
+pub mod gpio;
 pub mod gu_ext;
 #[cfg(feature = "kernel")]
 pub mod hook;
 #[cfg(not(feature = "stub-only"))]
 pub mod http;
-#[cfg(feature = "kernel")]
-pub mod gpio;
 #[cfg(feature = "kernel")]
 pub mod hw;
 #[cfg(not(feature = "stub-only"))]

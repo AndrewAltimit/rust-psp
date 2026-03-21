@@ -99,9 +99,15 @@ pub fn gpio_enable() -> Option<Result<(), SysregError>> {
     let f1 = unsafe { GPIO_CLK_ENABLE }?;
     let f2 = unsafe { GPIO_IO_ENABLE }?;
     let ret = unsafe { f1() };
-    if ret < 0 { return Some(Err(SysregError(ret))); }
+    if ret < 0 {
+        return Some(Err(SysregError(ret)));
+    }
     let ret = unsafe { f2() };
-    Some(if ret < 0 { Err(SysregError(ret)) } else { Ok(()) })
+    Some(if ret < 0 {
+        Err(SysregError(ret))
+    } else {
+        Ok(())
+    })
 }
 
 /// Enable USB peripheral (clock, I/O, and bus clock).
@@ -110,11 +116,19 @@ pub fn usb_enable() -> Option<Result<(), SysregError>> {
     let f2 = unsafe { USB_IO_ENABLE }?;
     let f3 = unsafe { USB_BUS_CLK_ENABLE }?;
     let ret = unsafe { f1() };
-    if ret < 0 { return Some(Err(SysregError(ret))); }
+    if ret < 0 {
+        return Some(Err(SysregError(ret)));
+    }
     let ret = unsafe { f2() };
-    if ret < 0 { return Some(Err(SysregError(ret))); }
+    if ret < 0 {
+        return Some(Err(SysregError(ret)));
+    }
     let ret = unsafe { f3() };
-    Some(if ret < 0 { Err(SysregError(ret)) } else { Ok(()) })
+    Some(if ret < 0 {
+        Err(SysregError(ret))
+    } else {
+        Ok(())
+    })
 }
 
 /// Disable USB peripheral.
@@ -123,11 +137,19 @@ pub fn usb_disable() -> Option<Result<(), SysregError>> {
     let f2 = unsafe { USB_IO_DISABLE }?;
     let f3 = unsafe { USB_CLK_DISABLE }?;
     let ret = unsafe { f1() };
-    if ret < 0 { return Some(Err(SysregError(ret))); }
+    if ret < 0 {
+        return Some(Err(SysregError(ret)));
+    }
     let ret = unsafe { f2() };
-    if ret < 0 { return Some(Err(SysregError(ret))); }
+    if ret < 0 {
+        return Some(Err(SysregError(ret)));
+    }
     let ret = unsafe { f3() };
-    Some(if ret < 0 { Err(SysregError(ret)) } else { Ok(()) })
+    Some(if ret < 0 {
+        Err(SysregError(ret))
+    } else {
+        Ok(())
+    })
 }
 
 /// Check if a USB cable is connected (system register level).
