@@ -39,6 +39,12 @@ psp_extern! {
         type_: i32,
     ) -> i32;
 
+    #[psp(0x2F385E7F)]
+    pub fn sceVideocodecScanHeader(
+        buffer: *mut u32,
+        type_: i32,
+    ) -> i32;
+
     #[psp(0xDBA273FA)]
     pub fn sceVideocodecDecode(
         buffer: *mut u32,

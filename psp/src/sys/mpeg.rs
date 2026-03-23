@@ -359,6 +359,32 @@ psp_extern! {
         status: *mut i32,
     ) -> i32;
 
+    #[psp(0x11F95CF1)]
+    /// Feed a raw H.264 NAL unit to the ME for decode.
+    ///
+    /// Bypasses the MPEG-PS demuxer (sceMpegRingbufferPut) and feeds
+    /// H.264 NAL units directly. Used by homebrew video players.
+    ///
+    /// # Parameters
+    /// - `handle`: SceMpeg handle from sceMpegCreate
+    /// - `nal`: Pointer to Mp4AvcNalStruct with SPS/PPS + NAL data
+    /// - `au`: SceMpegAu from sceMpegInitAu
+    pub fn sceMpegGetAvcNalAu(
+        handle: SceMpeg,
+        nal: *mut c_void,
+        au: *mut SceMpegAu,
+    ) -> i32;
+
+    #[psp(0xCF3547A2)]
+    /// Get detailed decode results including YCbCr buffer pointers.
+    ///
+    /// Called after sceMpegAvcDecode to retrieve the decoded frame's
+    /// YCbCr plane pointers and dimensions for CSC conversion.
+    pub fn sceMpegAvcDecodeDetail2(
+        handle: SceMpeg,
+        detail: *mut *mut c_void,
+    ) -> i32;
+
     #[psp(0xE1CE83A7)]
     /// # Parameters
     ///
@@ -457,6 +483,24 @@ psp_extern! {
         rgb_buffer2: *mut c_void,
         width: i32,
         y_cr_cb_buffer: *mut SceMpegYCrCbBuffer,
+    ) -> i32;
+
+    #[psp(0x91929A21)]
+    /// Hardware YCbCr to RGB color space conversion (AVC variant).
+    ///
+    /// Used after sceMpegAvcDecode + sceMpegAvcDecodeDetail2 to convert
+    /// the ME's YCbCr output to ABGR pixels.
+    ///
+    /// # Parameters
+    /// - `rgb_buffer`: Destination ABGR pixel buffer
+    /// - `unknown`: Usually 0
+    /// - `width`: Output stride in pixels (512 or 768)
+    /// - `csc`: Color space conversion parameters (from DecodeDetail2)
+    pub fn sceMpegBaseCscAvc(
+        rgb_buffer: *mut c_void,
+        unknown: i32,
+        width: i32,
+        csc: *mut c_void,
     ) -> i32;
 
     #[psp(0xBEA18F91)]
