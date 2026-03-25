@@ -21,5 +21,9 @@ pub const DEFAULT_EXIT_STACK_SIZE: i32 = 0x1000;
 
 /// NID for module_start export
 pub const NID_MODULE_START: u32 = 0xd632_acdb;
+/// NID for module_stop export
+pub const NID_MODULE_STOP: u32 = 0xcee8_593c;
 /// NID for SceModuleInfo export
 pub const NID_MODULE_INFO: u32 = 0xf01d_73a7;
+/// NID for module_sdk_version export
+pub const NID_MODULE_SDK_VERSION: u32 = 0x11b9_7506;

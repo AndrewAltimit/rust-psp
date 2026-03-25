@@ -81,8 +81,14 @@ pub struct SceMpegAvcMode {
     pub pixel_format: sys::DisplayPixelFormat,
 }
 
+// sceMpeg import stubs DISABLED — having them in the EBOOT causes a freeze
+// when the kernel re-links them after mpeg_vsh370.prx starts (possibly
+// I-cache corruption from stub patching on ARK-4 CFW).
+// Instead, functions are resolved at runtime via function pointer dispatch
+// (see mpeg_stubs module below).
+#[cfg(any())]
 psp_extern! {
-    #![name = "sceMpeg"]
+    #![name = "sceMpegVsh_library"]
     #![flags = 0x0009]
     #![version = (0x00, 0x00)]
 
@@ -462,6 +468,11 @@ pub struct SceMpegYCrCbBuffer {
     pub unknown3: [i32; 11usize],
 }
 
+// sceMpegbase — disabled as import stubs for now (causes freeze when
+// compiled into the EBOOT, possibly due to kernel re-linking issues).
+// Using dummy stubs below; the real functions can be called via
+// function pointers resolved at runtime if needed.
+#[cfg(any())]
 psp_extern! {
     #![name = "sceMpegbase"]
     #![flags = 0x0009]
@@ -486,16 +497,6 @@ psp_extern! {
     ) -> i32;
 
     #[psp(0x91929A21)]
-    /// Hardware YCbCr to RGB color space conversion (AVC variant).
-    ///
-    /// Used after sceMpegAvcDecode + sceMpegAvcDecodeDetail2 to convert
-    /// the ME's YCbCr output to ABGR pixels.
-    ///
-    /// # Parameters
-    /// - `rgb_buffer`: Destination ABGR pixel buffer
-    /// - `unknown`: Usually 0
-    /// - `width`: Output stride in pixels (512 or 768)
-    /// - `csc`: Color space conversion parameters (from DecodeDetail2)
     pub fn sceMpegBaseCscAvc(
         rgb_buffer: *mut c_void,
         unknown: i32,
@@ -504,6 +505,46 @@ psp_extern! {
     ) -> i32;
 
     #[psp(0xBEA18F91)]
-    /// Unknown real function name.
     pub fn sceMpegbase_BEA18F91(lli: *mut SceMpegLLI) -> i32;
 }
+
+// --- Dummy stubs for sceMpeg + sceMpegbase ---
+// Import stubs cause a freeze on ARK-4 CFW (PSP-3001, FW 6.61).
+// These return error values; video decode falls back to audio-only.
+// TODO: Wire up function pointer dispatch once kernel PRX resolution works.
+#[allow(non_snake_case, unused_variables)]
+pub mod mpeg_stubs {
+    use super::*;
+    use core::ffi::c_void;
+
+    pub unsafe fn sceMpegInit() -> i32 { -1 }
+    pub unsafe fn sceMpegFinish() {}
+    pub unsafe fn sceMpegQueryMemSize(_mode: i32) -> i32 { 65536 }
+    pub unsafe fn sceMpegCreate(_m: SceMpeg, _d: *mut c_void, _s: i32, _r: *mut SceMpegRingbuffer, _fw: i32, _mode: i32, _ddr: i32) -> i32 { -1 }
+    pub unsafe fn sceMpegDelete(_m: SceMpeg) {}
+    pub unsafe fn sceMpegRegistStream(_m: SceMpeg, _t: i32, _c: i32) -> SceMpegStream { core::mem::zeroed() }
+    pub unsafe fn sceMpegMallocAvcEsBuf(_m: SceMpeg) -> *mut c_void { core::ptr::null_mut() }
+    pub unsafe fn sceMpegFreeAvcEsBuf(_m: SceMpeg, _b: *mut c_void) {}
+    pub unsafe fn sceMpegInitAu(_m: SceMpeg, _b: *mut c_void, _a: *mut SceMpegAu) -> i32 { -1 }
+    pub unsafe fn sceMpegAvcDecode(_m: SceMpeg, _a: *mut SceMpegAu, _w: i32, _b: *mut c_void, _i: *mut i32) -> i32 { -1 }
+    pub unsafe fn sceMpegAvcDecodeMode(_m: SceMpeg, _mode: *mut SceMpegAvcMode) -> i32 { -1 }
+    pub unsafe fn sceMpegAvcDecodeDetail2(_m: SceMpeg, _d: *mut *mut c_void) -> i32 { -1 }
+    pub unsafe fn sceMpegGetAvcAu(_m: SceMpeg, _s: SceMpegStream, _a: *mut SceMpegAu, _x: *mut i32) -> i32 { -1 }
+    pub unsafe fn sceMpegGetAvcNalAu(_m: SceMpeg, _n: *mut c_void, _a: *mut SceMpegAu) -> i32 { -1 }
+    pub unsafe fn sceMpegQueryStreamOffset(_m: SceMpeg, _b: *mut c_void, _o: *mut i32) -> i32 { -1 }
+    pub unsafe fn sceMpegQueryStreamSize(_b: *mut c_void, _s: *mut i32) -> i32 { -1 }
+    pub unsafe fn sceMpegRingbufferQueryMemSize(_p: i32) -> i32 { 0 }
+    pub unsafe fn sceMpegRingbufferConstruct(_r: *mut SceMpegRingbuffer, _p: i32, _d: *mut c_void, _s: i32, _c: SceMpegRingbufferCb, _x: *mut c_void) -> i32 { -1 }
+    pub unsafe fn sceMpegRingbufferDestruct(_r: *mut SceMpegRingbuffer) {}
+    pub unsafe fn sceMpegRingbufferAvailableSize(_r: *mut SceMpegRingbuffer) -> i32 { 0 }
+    pub unsafe fn sceMpegRingbufferPut(_r: *mut SceMpegRingbuffer, _n: i32, _a: i32) -> i32 { 0 }
+    pub unsafe fn sceMpegAvcDecodeStop(_m: SceMpeg, _fw: i32, _b: *mut c_void, _s: *mut i32) -> i32 { -1 }
+    pub unsafe fn sceMpegFlushAllStream(_m: SceMpeg) -> i32 { -1 }
+    pub unsafe fn sceMpegBaseCscInit(_w: i32) -> i32 { -1 }
+    pub unsafe fn sceMpegUnRegistStream(_m: SceMpeg, _s: SceMpegStream) {}
+    pub unsafe fn sceMpegBaseCscAvc(_r: *mut c_void, _u: i32, _w: i32, _c: *mut c_void) -> i32 { -1 }
+    pub unsafe fn sceMpegBaseYCrCbCopyVme(_y: *mut c_void, _b: *mut i32, _t: i32) -> i32 { -1 }
+    pub unsafe fn sceMpegBaseCscVme(_r: *mut c_void, _r2: *mut c_void, _w: i32, _y: *mut SceMpegYCrCbBuffer) -> i32 { -1 }
+    pub unsafe fn sceMpegbase_BEA18F91(_l: *mut SceMpegLLI) -> i32 { -1 }
+}
+

@@ -1,6 +1,7 @@
 #[cfg(target_os = "psp")]
 use crate::sys::SceStubLibraryEntry;
 
+
 /// A macro that enables the use of `concat!` inside the `#[link_section = ...]`
 /// attribute.
 #[cfg(target_os = "psp")]
@@ -92,8 +93,16 @@ macro_rules! psp_extern {
             }
             let func = [< __ $name _stub >] as Func;
 
+            // Use eabi_arg to widen any argument type (u8, u16, u32,
+            // pointers, newtypes, enums) to u32 for the EABI bridge.
+            // This handles PSP functions with mixed u16/u32 parameter types.
+            // NOTE: For special mappers (i_ii_i_rii etc.) that handle u64,
+            // eabi_arg truncates to low 32 bits — those mappers receive
+            // the u64 as two u32 words via the O32 calling convention.
             // The transmutes here are for newtypes that fit into a single
-            // register.
+            // register. For EABI mappers (i5-i9), all args must be u32.
+            // PSP functions with u16 params should use u32 in their
+            // declarations (the kernel reads full 32-bit registers).
             core::mem::transmute($abi(
                 $(core::mem::transmute($arg)),*,
                 core::mem::transmute(func),

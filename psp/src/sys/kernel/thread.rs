@@ -7,7 +7,7 @@
 //! version of Puzzle Bobble.
 
 use super::SceUid;
-use crate::eabi::i6;
+use crate::eabi::{i5, i6};
 use core::ffi::c_void;
 
 /// Structure to hold the psp profiler register values
@@ -840,7 +840,7 @@ psp_extern! {
         status: *mut SceKernelThreadRunStatus,
     ) -> i32;
 
-    #[psp(0xD6DA4BA1)]
+    #[psp(0xD6DA4BA1, i5)]
     /// Creates a new semaphore
     ///
     /// # Parameters
@@ -957,7 +957,7 @@ psp_extern! {
         info: *mut SceKernelSemaInfo,
     ) -> i32;
 
-    #[psp(0x19CFF145)]
+    #[psp(0x19CFF145, i5)]
     /// Create a lightweight mutex
     ///
     /// # Parameters
@@ -1132,7 +1132,7 @@ psp_extern! {
         out_bits: *mut u32,
     ) -> i32;
 
-    #[psp(0x402FCF22)]
+    #[psp(0x402FCF22, i5)]
     /// Wait for an event flag for a given bit pattern.
     ///
     /// # Parameters
@@ -1154,7 +1154,7 @@ psp_extern! {
         timeout: *mut u32,
     ) -> i32;
 
-    #[psp(0x328C546A)]
+    #[psp(0x328C546A, i5)]
     /// Wait for an event flag for a given bit pattern with callback.
     ///
     /// # Parameters
