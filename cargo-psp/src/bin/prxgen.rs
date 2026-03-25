@@ -193,6 +193,20 @@ impl<'a> PrxBuilder<'a> {
             section_header.sh_size = (rels.len() * SIZEOF_REL) as u32;
         }
 
+        // Remove leftover SHT_REL sections that target non-ALLOC sections.
+        // These were not collected into self.relocations (filtered out above)
+        // but their section headers remain. The PSP kernel processes ALL
+        // relocation sections it finds, so leftover SHT_REL sections cause
+        // it to apply bogus relocations, corrupting module state and
+        // preventing sceKernelStartModule from working.
+        for (i, sh) in self.section_headers.iter_mut().enumerate() {
+            if sh.sh_type == SHT_REL && !self.relocations.contains_key(&i) {
+                // Zero out the section header so the kernel ignores it.
+                sh.sh_type = 0; // SHT_NULL
+                sh.sh_size = 0;
+            }
+        }
+
         // Get module info
         let module_info = {
             let sh_string_table = self.section_headers[self.header.e_shstrndx as usize];

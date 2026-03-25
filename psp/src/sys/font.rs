@@ -1,5 +1,6 @@
 //! PGF Font Library
 
+use crate::eabi::i5;
 use crate::sys::kernel::SceUid;
 use core::ffi::c_void;
 
@@ -269,7 +270,7 @@ psp_extern! {
     #[psp(0x980F4895)]
     pub fn sceFontGetCharGlyphImage(handle: u32, char_code: u32, glyph: &mut SceFontGlyphImage) -> i32;
 
-    #[psp(0xCA1E6945)]
+    #[psp(0xCA1E6945, i5)]
     pub fn sceFontGetCharGlyphImage_Clip(handle: u32, char_code: u32, glyph: &mut SceFontGlyphImage, clip_x_pos: i32, clip_y_pos: i32) -> i32;
 
     #[psp(0xEE232411)]
@@ -305,6 +306,6 @@ psp_extern! {
     #[psp(0x568BE516)]
     pub fn sceFontGetShadowGlyphImage(handle: u32, char_code: u32, glyph: &mut SceFontGlyphImage) -> i32;
 
-    #[psp(0x5DCF6858)]
+    #[psp(0x5DCF6858, i5)]
     pub fn sceFontGetShadowGlyphImage_Clip(handle: u32, char_code: u32, glyph: &mut SceFontGlyphImage, clip_x_pos: i32, clip_y_pos: i32) -> i32;
 }

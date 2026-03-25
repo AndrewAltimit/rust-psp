@@ -129,6 +129,9 @@ mod sctrl;
 #[cfg(feature = "kernel")]
 pub use sctrl::*;
 
+// KUBridge is available from USER mode (it's a CFW bridge to kernel).
+pub mod kubridge;
+
 #[cfg(feature = "kernel")]
 mod usbbd;
 #[cfg(feature = "kernel")]

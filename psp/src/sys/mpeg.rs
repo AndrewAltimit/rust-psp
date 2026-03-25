@@ -81,6 +81,17 @@ pub struct SceMpegAvcMode {
     pub pixel_format: sys::DisplayPixelFormat,
 }
 
+// sceMpeg import stubs — weak imports from "sceMpeg" library (provided by
+// AvMpegBase, loaded via sceUtilityLoadModule). The stubs are unresolved at
+// EBOOT load time; the kernel re-links them when AvMpegBase registers the
+// library during preinit_mpeg().
+//
+// NOTE: sceMpegVsh_library stubs caused a freeze on ARK-4 (tested 2025-03-25).
+// Standard "sceMpeg" stubs with AvMpegBase may work differently since
+// sceUtilityLoadModule uses the system module loader, not sceKernelLoadModule.
+// Use "sceMpeg" stubs (resolved by AvMpegBase at preinit).
+// After mpeg_vsh370 loads from video thread, it may override the
+// kernel's sceMpeg dispatch if it registers compatible NIDs.
 psp_extern! {
     #![name = "sceMpeg"]
     #![flags = 0x0009]
@@ -160,25 +171,38 @@ psp_extern! {
     ) -> i32;
 
     #[psp(0xC132E22F)]
+    /// Query the buffer size required by `sceMpegCreate`.
+    ///
     /// # Parameters
     ///
-    /// - `unk`: Unknown, set to 0
+    /// - `mode`: decode mode. Standard PSMF playback uses 0. For NAL-based
+    ///   H.264 decode via `sceMpegGetAvcNalAu` (homebrew MP4 playback), use
+    ///   **4** (video ≤480×272) or **5** (video >480×272). The mode affects
+    ///   internal ME structure allocation and must match the value passed to
+    ///   `sceMpegCreate`. Discovered via PMPlayer source (cooleyes).
     ///
     /// # Return Value
     ///
-    /// < 0 if error else decoder data size.
-    pub fn sceMpegQueryMemSize(unk: i32) -> i32;
+    /// < 0 if error else decoder data size in bytes.
+    pub fn sceMpegQueryMemSize(mode: i32) -> i32;
 
     #[psp(0xD8C5F121, i7)]
+    /// Create an sceMpeg instance.
+    ///
     /// # Parameters
     ///
-    /// - `mpeg`: will be filled
-    /// - `data`: pointer to allocated memory of size = sceMpegQueryMemSize()
-    /// - `size`: size of data, should be = sceMpegQueryMemSize()
-    /// - `ringbuffer`: a ringbuffer
+    /// - `handle`: SceMpeg handle (will be filled)
+    /// - `data`: pointer to allocated memory of size = `sceMpegQueryMemSize(mode)`
+    /// - `size`: size of data
+    /// - `ringbuffer`: a ringbuffer from `sceMpegRingbufferConstruct`
     /// - `frame_width`: display buffer width, set to 512 if writing to framebuffer
-    /// - `unk1`: unknown, set to 0
-    /// - `unk2`: unknown, set to 0
+    /// - `mode`: decode mode (must match the value passed to `sceMpegQueryMemSize`).
+    ///   Use 0 for standard PSMF playback, **4** for NAL-based H.264 ≤480×272,
+    ///   **5** for NAL-based H.264 >480×272.
+    /// - `ddr_top`: for NAL-based decode (mode 4/5): pointer to a 2MB buffer
+    ///   aligned to a 4MB boundary, used as ME decode workspace. The ME writes
+    ///   decoded YCbCr frames here. Pass 0 for standard PSMF mode.
+    ///   Allocate via `sceKernelAllocPartitionMemory` (2MB + 4MB alignment).
     ///
     /// # Return Value
     ///
@@ -189,8 +213,8 @@ psp_extern! {
         size: i32,
         ringbuffer: *mut SceMpegRingbuffer,
         frame_width: i32,
-        unk1: i32,
-        unk2: i32,
+        mode: i32,
+        ddr_top: i32,
     ) -> i32;
 
     #[psp(0x606A4649)]
@@ -359,6 +383,32 @@ psp_extern! {
         status: *mut i32,
     ) -> i32;
 
+    #[psp(0x11F95CF1)]
+    /// Feed a raw H.264 NAL unit to the ME for decode.
+    ///
+    /// Bypasses the MPEG-PS demuxer (sceMpegRingbufferPut) and feeds
+    /// H.264 NAL units directly. Used by homebrew video players.
+    ///
+    /// # Parameters
+    /// - `handle`: SceMpeg handle from sceMpegCreate
+    /// - `nal`: Pointer to Mp4AvcNalStruct with SPS/PPS + NAL data
+    /// - `au`: SceMpegAu from sceMpegInitAu
+    pub fn sceMpegGetAvcNalAu(
+        handle: SceMpeg,
+        nal: *mut c_void,
+        au: *mut SceMpegAu,
+    ) -> i32;
+
+    #[psp(0xCF3547A2)]
+    /// Get detailed decode results including YCbCr buffer pointers.
+    ///
+    /// Called after sceMpegAvcDecode to retrieve the decoded frame's
+    /// YCbCr plane pointers and dimensions for CSC conversion.
+    pub fn sceMpegAvcDecodeDetail2(
+        handle: SceMpeg,
+        detail: *mut *mut c_void,
+    ) -> i32;
+
     #[psp(0xE1CE83A7)]
     /// # Parameters
     ///
@@ -394,6 +444,29 @@ psp_extern! {
         buffer: *mut c_void,
         init: i32,
     ) -> i32;
+}
+
+// sceMpegVsh_library bridge stubs — same NIDs as sceMpeg but imported from
+// "sceMpegVsh_library" (provided by mpeg_vsh370.prx). These are unresolved
+// at EBOOT load time. After mpeg_vsh370 starts, the kernel resolves them.
+// The EBOOT reads syscall numbers from these stubs and patches the main
+// sceMpeg stubs above to use mpeg_vsh370's implementation instead of AvMpegBase.
+//
+// WARNING: mpeg_vsh370.prx must be loaded from a non-main thread.
+// Loading it on the main thread causes a permanent GU freeze (likely an
+// EDRAM partition conflict with GU framebuffers).
+//
+// Function names prefixed with "vsh_" to avoid symbol conflicts.
+psp_extern! {
+    #![name = "sceMpegVsh_library"]
+    #![flags = 0x0009]
+    #![version = (0x00, 0x00)]
+
+    #[psp(0x682A619B)]
+    pub fn vsh_sceMpegInit() -> i32;
+
+    #[psp(0xC132E22F)]
+    pub fn vsh_sceMpegQueryMemSize(unk: i32) -> i32;
 }
 
 #[repr(C)]
@@ -436,6 +509,7 @@ pub struct SceMpegYCrCbBuffer {
     pub unknown3: [i32; 11usize],
 }
 
+// sceMpegbase (provided by AvCodec, loaded via sceUtilityLoadModule).
 psp_extern! {
     #![name = "sceMpegbase"]
     #![flags = 0x0009]
@@ -459,7 +533,14 @@ psp_extern! {
         y_cr_cb_buffer: *mut SceMpegYCrCbBuffer,
     ) -> i32;
 
+    #[psp(0x91929A21)]
+    pub fn sceMpegBaseCscAvc(
+        rgb_buffer: *mut c_void,
+        unknown: i32,
+        width: i32,
+        csc: *mut c_void,
+    ) -> i32;
+
     #[psp(0xBEA18F91)]
-    /// Unknown real function name.
     pub fn sceMpegbase_BEA18F91(lli: *mut SceMpegLLI) -> i32;
 }

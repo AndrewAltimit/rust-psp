@@ -75,6 +75,8 @@ pub mod mem;
 #[cfg(not(feature = "stub-only"))]
 pub mod mp3;
 #[cfg(not(feature = "stub-only"))]
+pub mod mpeg;
+#[cfg(not(feature = "stub-only"))]
 pub mod net;
 #[cfg(not(feature = "stub-only"))]
 pub mod osk;
@@ -293,7 +295,8 @@ macro_rules! __module_impl {
             static MODULE_INFO: $crate::Align16<$crate::sys::SceModuleInfo> =
                 $crate::Align16($crate::sys::SceModuleInfo {
                     mod_attribute: $attr,
-                    mod_version: [$version_major, $version_minor],
+                    // PSPSDK convention: [minor, major] byte order
+                    mod_version: [$version_minor, $version_major],
                     mod_name: $crate::sys::SceModuleInfo::name($name),
                     terminal: 0,
                     gp_value: unsafe { &_gp },
@@ -316,7 +319,8 @@ macro_rules! __module_impl {
             #[used]
             static LIB_ENT: $crate::sys::SceLibraryEntry = $crate::sys::SceLibraryEntry {
                 name: core::ptr::null(),
-                version: ($version_major, $version_minor),
+                // Syslib version is always (0, 0) per PSPSDK convention
+                version: (0, 0),
                 attribute: $crate::sys::SceLibAttr::SCE_LIB_IS_SYSLIB,
                 entry_len: 4,
                 var_count: 1,

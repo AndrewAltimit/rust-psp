@@ -38,6 +38,34 @@ unsafe extern "C" {
         ptr: extern "C" fn(u32, u32, u32, u32, u32, u32, u32) -> u32,
     ) -> u32;
 
+    /// Call a function accepting 8 32-bit integer arguments via the MIPS-EABI ABI.
+    pub fn i8(
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+        e: u32,
+        f: u32,
+        g: u32,
+        h: u32,
+        ptr: extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
+    ) -> u32;
+
+    /// Call a function accepting 9 32-bit integer arguments via the MIPS-EABI ABI.
+    /// The 9th argument goes on the EABI stack (not in a register).
+    pub fn i9(
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+        e: u32,
+        f: u32,
+        g: u32,
+        h: u32,
+        j: u32,
+        ptr: extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
+    ) -> u32;
+
     /// Call a function with the signature `fn(i32, i64, i32) -> i64` via the MIPS-EABI ABI.
     ///
     /// This is not safe to call with a function that expects any other ABI.
@@ -111,6 +139,44 @@ core::arch::global_asm!(
 
             lw $ra, 8($sp)
             addiu $sp, 32
+            jr $ra
+
+        .global i8
+        i8:
+            addiu $sp, -32
+            sw $ra, 8($sp)
+
+            lw $t0, 48($sp)
+            lw $t1, 52($sp)
+            lw $t2, 56($sp)
+            lw $t3, 60($sp)
+
+            lw $v0, 64($sp)
+            jalr $v0
+
+            lw $ra, 8($sp)
+            addiu $sp, 32
+            jr $ra
+
+        .global i9
+        i9:
+            addiu $sp, -48
+            sw $ra, 8($sp)
+
+            lw $t0, 64($sp)
+            lw $t1, 68($sp)
+            lw $t2, 72($sp)
+            lw $t3, 76($sp)
+
+            // 9th arg: load from O32 stack, store on EABI stack
+            lw $v0, 80($sp)
+            sw $v0, 16($sp)
+
+            lw $v0, 84($sp)
+            jalr $v0
+
+            lw $ra, 8($sp)
+            addiu $sp, 48
             jr $ra
 
         .global i_ii_i_rii
