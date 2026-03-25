@@ -171,25 +171,38 @@ psp_extern! {
     ) -> i32;
 
     #[psp(0xC132E22F)]
+    /// Query the buffer size required by `sceMpegCreate`.
+    ///
     /// # Parameters
     ///
-    /// - `unk`: Unknown, set to 0
+    /// - `mode`: decode mode. Standard PSMF playback uses 0. For NAL-based
+    ///   H.264 decode via `sceMpegGetAvcNalAu` (homebrew MP4 playback), use
+    ///   **4** (video ≤480×272) or **5** (video >480×272). The mode affects
+    ///   internal ME structure allocation and must match the value passed to
+    ///   `sceMpegCreate`. Discovered via PMPlayer source (cooleyes).
     ///
     /// # Return Value
     ///
-    /// < 0 if error else decoder data size.
-    pub fn sceMpegQueryMemSize(unk: i32) -> i32;
+    /// < 0 if error else decoder data size in bytes.
+    pub fn sceMpegQueryMemSize(mode: i32) -> i32;
 
     #[psp(0xD8C5F121, i7)]
+    /// Create an sceMpeg instance.
+    ///
     /// # Parameters
     ///
-    /// - `mpeg`: will be filled
-    /// - `data`: pointer to allocated memory of size = sceMpegQueryMemSize()
-    /// - `size`: size of data, should be = sceMpegQueryMemSize()
-    /// - `ringbuffer`: a ringbuffer
+    /// - `handle`: SceMpeg handle (will be filled)
+    /// - `data`: pointer to allocated memory of size = `sceMpegQueryMemSize(mode)`
+    /// - `size`: size of data
+    /// - `ringbuffer`: a ringbuffer from `sceMpegRingbufferConstruct`
     /// - `frame_width`: display buffer width, set to 512 if writing to framebuffer
-    /// - `unk1`: unknown, set to 0
-    /// - `unk2`: unknown, set to 0
+    /// - `mode`: decode mode (must match the value passed to `sceMpegQueryMemSize`).
+    ///   Use 0 for standard PSMF playback, **4** for NAL-based H.264 ≤480×272,
+    ///   **5** for NAL-based H.264 >480×272.
+    /// - `ddr_top`: for NAL-based decode (mode 4/5): pointer to a 2MB buffer
+    ///   aligned to a 4MB boundary, used as ME decode workspace. The ME writes
+    ///   decoded YCbCr frames here. Pass 0 for standard PSMF mode.
+    ///   Allocate via `sceKernelAllocPartitionMemory` (2MB + 4MB alignment).
     ///
     /// # Return Value
     ///
@@ -200,8 +213,8 @@ psp_extern! {
         size: i32,
         ringbuffer: *mut SceMpegRingbuffer,
         frame_width: i32,
-        unk1: i32,
-        unk2: i32,
+        mode: i32,
+        ddr_top: i32,
     ) -> i32;
 
     #[psp(0x606A4649)]

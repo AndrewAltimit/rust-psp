@@ -73,6 +73,8 @@ pub mod math;
 pub mod me;
 pub mod mem;
 #[cfg(not(feature = "stub-only"))]
+pub mod mpeg;
+#[cfg(not(feature = "stub-only"))]
 pub mod mp3;
 #[cfg(not(feature = "stub-only"))]
 pub mod net;
