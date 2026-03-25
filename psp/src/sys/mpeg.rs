@@ -433,6 +433,25 @@ psp_extern! {
     ) -> i32;
 }
 
+// sceMpegVsh_library bridge stubs — same NIDs as sceMpeg but imported from
+// "sceMpegVsh_library" (provided by mpeg_vsh370.prx). These are unresolved
+// at EBOOT load time. After mpeg_vsh370 starts, the kernel resolves them.
+// The EBOOT reads syscall numbers from these stubs and patches the main
+// sceMpeg stubs above to use mpeg_vsh370's implementation instead of AvMpegBase.
+//
+// Function names prefixed with "vsh_" to avoid symbol conflicts.
+psp_extern! {
+    #![name = "sceMpegVsh_library"]
+    #![flags = 0x0009]
+    #![version = (0x00, 0x00)]
+
+    #[psp(0x682A619B)]
+    pub fn vsh_sceMpegInit() -> i32;
+
+    #[psp(0xC132E22F)]
+    pub fn vsh_sceMpegQueryMemSize(unk: i32) -> i32;
+}
+
 #[repr(C)]
 #[repr(align(64))]
 #[derive(Copy, Clone)]
