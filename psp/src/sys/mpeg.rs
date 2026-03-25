@@ -540,5 +540,3 @@ psp_extern! {
     #[psp(0xBEA18F91)]
     pub fn sceMpegbase_BEA18F91(lli: *mut SceMpegLLI) -> i32;
 }
-
-

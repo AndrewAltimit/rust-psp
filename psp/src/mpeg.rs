@@ -249,9 +249,8 @@ impl AvcDecoder {
         let rb_packets = 8;
         let rb_size = unsafe { crate::sys::sceMpegRingbufferQueryMemSize(rb_packets) };
         let mut rb_data = vec![0u8; if rb_size > 0 { rb_size as usize } else { 16384 }];
-        let mut ringbuffer = Box::new(unsafe {
-            core::mem::zeroed::<crate::sys::SceMpegRingbuffer>()
-        });
+        let mut ringbuffer =
+            Box::new(unsafe { core::mem::zeroed::<crate::sys::SceMpegRingbuffer>() });
         if rb_size > 0 {
             let ret = unsafe {
                 crate::sys::sceMpegRingbufferConstruct(
@@ -271,9 +270,8 @@ impl AvcDecoder {
 
         // Step 5: Create sceMpeg instance with mode + DDR top.
         let mpeg_storage = Box::into_raw(Box::new(core::ptr::null_mut::<c_void>()));
-        let mpeg: crate::sys::SceMpeg = unsafe {
-            core::mem::transmute(mpeg_storage as *mut *mut c_void)
-        };
+        let mpeg: crate::sys::SceMpeg =
+            unsafe { core::mem::transmute(mpeg_storage as *mut *mut c_void) };
         let ret = unsafe {
             crate::sys::sceMpegCreate(
                 mpeg,

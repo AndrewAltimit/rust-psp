@@ -1,7 +1,6 @@
 #[cfg(target_os = "psp")]
 use crate::sys::SceStubLibraryEntry;
 
-
 /// A macro that enables the use of `concat!` inside the `#[link_section = ...]`
 /// attribute.
 #[cfg(target_os = "psp")]

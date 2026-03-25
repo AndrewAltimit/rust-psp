@@ -40,16 +40,29 @@ unsafe extern "C" {
 
     /// Call a function accepting 8 32-bit integer arguments via the MIPS-EABI ABI.
     pub fn i8(
-        a: u32, b: u32, c: u32, d: u32,
-        e: u32, f: u32, g: u32, h: u32,
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+        e: u32,
+        f: u32,
+        g: u32,
+        h: u32,
         ptr: extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
     ) -> u32;
 
     /// Call a function accepting 9 32-bit integer arguments via the MIPS-EABI ABI.
     /// The 9th argument goes on the EABI stack (not in a register).
     pub fn i9(
-        a: u32, b: u32, c: u32, d: u32,
-        e: u32, f: u32, g: u32, h: u32, j: u32,
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+        e: u32,
+        f: u32,
+        g: u32,
+        h: u32,
+        j: u32,
         ptr: extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32,
     ) -> u32;
 
