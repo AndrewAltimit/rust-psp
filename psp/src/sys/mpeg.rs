@@ -452,6 +452,10 @@ psp_extern! {
 // The EBOOT reads syscall numbers from these stubs and patches the main
 // sceMpeg stubs above to use mpeg_vsh370's implementation instead of AvMpegBase.
 //
+// WARNING: mpeg_vsh370.prx must be loaded from a non-main thread.
+// Loading it on the main thread causes a permanent GU freeze (likely an
+// EDRAM partition conflict with GU framebuffers).
+//
 // Function names prefixed with "vsh_" to avoid symbol conflicts.
 psp_extern! {
     #![name = "sceMpegVsh_library"]
