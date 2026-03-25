@@ -43,6 +43,13 @@
 //!   registers the "sceMpeg" library, which resolves the EBOOT's weak import
 //!   stubs. See [`AvcDecoder::new`] for details.
 //!
+//! **Important:** `sceUtilityLoadModule(AvMpegBase)` does NOT work for the NAL
+//! decode path. AvMpegBase provides the standard PSMF ringbuffer path only
+//! (`sceMpegGetAvcAu`). The mode 4/5 + DDR top parameters required by
+//! `sceMpegGetAvcNalAu` are specific to `mpeg_vsh370.prx`'s implementation.
+//! AvMpegBase returns `0x80628002` (AVC_DECODE_FATAL) even with correct
+//! parameters. Tested on real PSP hardware (2026-03-25).
+//!
 //! # Example
 //!
 //! ```ignore
