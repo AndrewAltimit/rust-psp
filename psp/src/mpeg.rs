@@ -390,16 +390,13 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
-        // Flush D-cache so ME sees current data.
+        // Flush entire D-cache so ME sees current data for all buffers
+        // (NAL data, nal_struct, SPS, PPS, AU). Range flushes miss
+        // SPS/PPS which the ME reads via DMA pointers in nal_struct.
+        // Full flush costs ~50μs but prevents cache aliasing hangs
+        // observed after ~90 consecutive decode calls on real hardware.
         unsafe {
-            crate::sys::sceKernelDcacheWritebackInvalidateRange(
-                nal.data.as_ptr() as *const c_void,
-                nal.data.len() as u32,
-            );
-            crate::sys::sceKernelDcacheWritebackInvalidateRange(
-                &nal_struct as *const _ as *const c_void,
-                core::mem::size_of::<Mp4AvcNalStruct>() as u32,
-            );
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
         }
 
         // Feed NAL to ME.
@@ -533,15 +530,9 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
+        // Full D-cache flush (same rationale as decode()).
         unsafe {
-            crate::sys::sceKernelDcacheWritebackInvalidateRange(
-                nal.data.as_ptr() as *const c_void,
-                nal.data.len() as u32,
-            );
-            crate::sys::sceKernelDcacheWritebackInvalidateRange(
-                &nal_struct as *const _ as *const c_void,
-                core::mem::size_of::<Mp4AvcNalStruct>() as u32,
-            );
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
         }
 
         let ret = unsafe {
