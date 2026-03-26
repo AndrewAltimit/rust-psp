@@ -678,6 +678,34 @@ impl AvcDecoder {
         self.ddr_aligned
     }
 
+    /// Read the internal semaphore ID from the sceMpeg instance.
+    ///
+    /// The semaphore is at offset 0x66c in the mpeg data structure
+    /// (discovered via RE of mpeg_vsh370.prx). This is the semaphore
+    /// that `sceMpegAvcDecode` waits on with NULL timeout. If the ME
+    /// deadlocks, signalling this semaphore from another thread will
+    /// unblock the stuck decode call.
+    ///
+    /// Returns `None` if the mpeg instance pointer is invalid.
+    pub fn internal_sema_id(&self) -> Option<crate::sys::SceUid> {
+        if self.mpeg_storage.is_null() {
+            return None;
+        }
+        unsafe {
+            let mpeg_data = *self.mpeg_storage;
+            if mpeg_data.is_null() {
+                return None;
+            }
+            let sema_ptr = (mpeg_data as *const u8).add(0x66c) as *const i32;
+            let sema_id = *sema_ptr;
+            if sema_id > 0 {
+                Some(crate::sys::SceUid(sema_id))
+            } else {
+                None
+            }
+        }
+    }
+
     /// Flush all ME stream state. Resets the decoded picture buffer,
     /// discarding all reference frames. The next frame fed to the
     /// decoder should be a keyframe (IDR) for correct output.
