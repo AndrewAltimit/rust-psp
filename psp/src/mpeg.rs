@@ -507,6 +507,141 @@ impl AvcDecoder {
         }))
     }
 
+    /// Decode one H.264 access unit into a caller-provided pixel buffer.
+    ///
+    /// Same as [`decode`] but writes ABGR pixels into `dst` instead of
+    /// allocating a new `Vec`. `dst` must have at least
+    /// `width * height * 4` bytes. Returns `Ok(true)` when a frame was
+    /// produced, `Ok(false)` when the ME needs more data (reordering).
+    pub fn decode_into(
+        &mut self, nal: &AvcNal<'_>, dst: &mut [u8],
+    ) -> Result<bool, MpegError> {
+        if nal.data.is_empty() {
+            return Ok(false);
+        }
+
+        let mpeg = self.mpeg();
+
+        let mut nal_struct = Mp4AvcNalStruct {
+            sps_buffer: nal.sps.as_ptr(),
+            sps_size: nal.sps.len() as i32,
+            pps_buffer: nal.pps.as_ptr(),
+            pps_size: nal.pps.len() as i32,
+            nal_prefix_size: nal.prefix_size,
+            nal_buffer: nal.data.as_ptr(),
+            nal_size: nal.data.len() as i32,
+            mode: if nal.is_first_frame { 3 } else { 0 },
+        };
+
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateRange(
+                nal.data.as_ptr() as *const c_void,
+                nal.data.len() as u32,
+            );
+            crate::sys::sceKernelDcacheWritebackInvalidateRange(
+                &nal_struct as *const _ as *const c_void,
+                core::mem::size_of::<Mp4AvcNalStruct>() as u32,
+            );
+        }
+
+        let ret = unsafe {
+            crate::sys::sceMpegGetAvcNalAu(
+                mpeg,
+                &mut nal_struct as *mut _ as *mut c_void,
+                &mut self.au,
+            )
+        };
+        if ret < 0 {
+            return Err(MpegError(ret));
+        }
+
+        let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
+        let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
+        let ret = unsafe {
+            crate::sys::sceMpegAvcDecode(
+                mpeg, &mut self.au, 512, buf_arg, &mut self.pic_num,
+            )
+        };
+        if ret < 0 {
+            return Err(MpegError(ret));
+        }
+
+        if self.pic_num <= 0 {
+            return Ok(false);
+        }
+
+        let mut detail2: *mut c_void = core::ptr::null_mut();
+        let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
+        if ret < 0 || detail2.is_null() {
+            return Err(MpegError(if ret < 0 { ret } else { -1 }));
+        }
+
+        let detail_ptr = detail2 as *const u32;
+        let info_ptr = unsafe { *detail_ptr.add(4) } as *const u32;
+        let yuv_ptr = unsafe { *detail_ptr.add(11) } as *const u32;
+
+        if info_ptr.is_null() || yuv_ptr.is_null() {
+            return Ok(false);
+        }
+
+        let info_w = unsafe { *info_ptr.add(2) } as u32;
+        let info_h = unsafe { *info_ptr.add(3) } as u32;
+        let csc_width = if info_w > 480 { 768i32 } else { 512 };
+
+        let csc = Mp4AvcCscStruct {
+            height: ((info_h + 15) / 16) as i32,
+            width: ((info_w + 15) / 16) as i32,
+            mode0: 0,
+            mode1: 0,
+            buffers: [
+                unsafe { *yuv_ptr.add(0) } as *const c_void,
+                unsafe { *yuv_ptr.add(1) } as *const c_void,
+                unsafe { *yuv_ptr.add(2) } as *const c_void,
+                unsafe { *yuv_ptr.add(3) } as *const c_void,
+                unsafe { *yuv_ptr.add(4) } as *const c_void,
+                unsafe { *yuv_ptr.add(5) } as *const c_void,
+                unsafe { *yuv_ptr.add(6) } as *const c_void,
+                unsafe { *yuv_ptr.add(7) } as *const c_void,
+            ],
+        };
+
+        let ret = unsafe {
+            crate::sys::sceMpegBaseCscAvc(
+                self.output_buf.as_mut_ptr() as *mut c_void,
+                0,
+                csc_width,
+                &csc as *const _ as *mut c_void,
+            )
+        };
+        if ret < 0 {
+            return Err(MpegError(ret));
+        }
+
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let stride = self.frame_width as usize;
+        let needed = w * h * 4;
+        if dst.len() < needed {
+            return Err(MpegError(-1));
+        }
+        for row in 0..h {
+            let src_off = row * stride * 4;
+            let dst_off = row * w * 4;
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    self.output_buf.as_ptr().add(src_off),
+                    dst.as_mut_ptr().add(dst_off),
+                    w * 4,
+                );
+            }
+            for x in 0..w {
+                dst[dst_off + x * 4 + 3] = 0xFF;
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Video width in pixels.
     pub fn width(&self) -> u32 {
         self.width
