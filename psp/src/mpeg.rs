@@ -78,6 +78,12 @@
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::{ffi::c_void, marker::PhantomData};
 
+/// Tracks which sceMpeg call is currently executing for hang diagnosis.
+/// 0=idle, 1=GetAvcNalAu, 2=AvcDecode, 3=AvcDecodeDetail2, 4=BaseCscAvc.
+/// Read from a watchdog or diagnostic logger on another thread.
+pub static DECODE_STEP: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(0);
+
 /// Error from an sceMpeg operation, wrapping the raw SCE error code.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct MpegError(pub i32);
@@ -390,14 +396,13 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
-        // Flush entire D-cache so ME sees current data for all buffers
-        // (NAL data, nal_struct, SPS, PPS, AU). Range flushes miss
-        // SPS/PPS which the ME reads via DMA pointers in nal_struct.
-        // Full flush costs ~50μs but prevents cache aliasing hangs
-        // observed after ~90 consecutive decode calls on real hardware.
         unsafe {
             crate::sys::sceKernelDcacheWritebackInvalidateAll();
         }
+
+        // Track decode step for hang diagnosis. Caller can read
+        // DECODE_STEP to see which sceMpeg call hung.
+        DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
 
         // Feed NAL to ME.
         let ret = unsafe {
@@ -408,8 +413,11 @@ impl AvcDecoder {
             )
         };
         if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(ret));
         }
+
+        DECODE_STEP.store(2, core::sync::atomic::Ordering::Relaxed);
 
         // Decode.
         let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
@@ -418,10 +426,14 @@ impl AvcDecoder {
             crate::sys::sceMpegAvcDecode(mpeg, &mut self.au, 512, buf_arg, &mut self.pic_num)
         };
         if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(ret));
         }
 
+        DECODE_STEP.store(3, core::sync::atomic::Ordering::Relaxed);
+
         if self.pic_num <= 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Ok(None); // No picture yet (B-frame reordering).
         }
 
@@ -463,6 +475,8 @@ impl AvcDecoder {
             ],
         };
 
+        DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
+
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
                 self.output_buf.as_mut_ptr() as *mut c_void,
@@ -472,8 +486,11 @@ impl AvcDecoder {
             )
         };
         if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(ret));
         }
+
+        DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
 
         // Copy from stride-aligned output to tight pixel buffer,
         // fixing alpha (CSC outputs A=0x00, we need A=0xFF).
@@ -530,10 +547,11 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
-        // Full D-cache flush (same rationale as decode()).
         unsafe {
             crate::sys::sceKernelDcacheWritebackInvalidateAll();
         }
+
+        DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
 
         let ret = unsafe {
             crate::sys::sceMpegGetAvcNalAu(
@@ -543,8 +561,11 @@ impl AvcDecoder {
             )
         };
         if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(ret));
         }
+
+        DECODE_STEP.store(2, core::sync::atomic::Ordering::Relaxed);
 
         let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
@@ -554,16 +575,21 @@ impl AvcDecoder {
             )
         };
         if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(ret));
         }
 
+        DECODE_STEP.store(3, core::sync::atomic::Ordering::Relaxed);
+
         if self.pic_num <= 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Ok(false);
         }
 
         let mut detail2: *mut c_void = core::ptr::null_mut();
         let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
         if ret < 0 || detail2.is_null() {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(if ret < 0 { ret } else { -1 }));
         }
 
@@ -572,6 +598,7 @@ impl AvcDecoder {
         let yuv_ptr = unsafe { *detail_ptr.add(11) } as *const u32;
 
         if info_ptr.is_null() || yuv_ptr.is_null() {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Ok(false);
         }
 
@@ -596,6 +623,8 @@ impl AvcDecoder {
             ],
         };
 
+        DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
+
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
                 self.output_buf.as_mut_ptr() as *mut c_void,
@@ -604,6 +633,7 @@ impl AvcDecoder {
                 &csc as *const _ as *mut c_void,
             )
         };
+        DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
         if ret < 0 {
             return Err(MpegError(ret));
         }
