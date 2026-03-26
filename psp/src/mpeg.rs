@@ -656,6 +656,30 @@ impl AvcDecoder {
     pub fn ddr_top(&self) -> u32 {
         self.ddr_aligned
     }
+
+    /// Flush all ME stream state. Resets the decoded picture buffer,
+    /// discarding all reference frames. The next frame fed to the
+    /// decoder should be a keyframe (IDR) for correct output.
+    ///
+    /// Use this to prevent DPB overflow on content with many reference
+    /// frames that exceeds the 2MB DDR workspace.
+    pub fn flush(&mut self) {
+        let mpeg = self.mpeg();
+        unsafe {
+            crate::sys::sceMpegFlushAllStream(mpeg);
+        }
+        // Re-init AU with 0xFF (required after flush, same as initial setup).
+        let au_buffer = (self.ddr_aligned + 0x10000) as *mut c_void;
+        unsafe {
+            core::ptr::write_bytes(
+                &mut self.au as *mut _ as *mut u8,
+                0xFF,
+                core::mem::size_of::<crate::sys::SceMpegAu>(),
+            );
+            crate::sys::sceMpegInitAu(mpeg, au_buffer, &mut self.au);
+        }
+        self.pic_num = 0;
+    }
 }
 
 impl Drop for AvcDecoder {
