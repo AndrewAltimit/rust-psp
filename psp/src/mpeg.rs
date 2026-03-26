@@ -688,23 +688,13 @@ impl AvcDecoder {
     /// resets only the H.264 decoder state (not the full MPEG instance).
     /// Also calls `sceMpegInit` which was accidentally found to reset
     /// ME internal state and extend decode lifetime.
+    /// Flush the decoder state. WARNING: Both `sceMpegFlushAllStream` and
+    /// `sceMpegAvcDecodeFlush` crash when called mid-stream on real PSP
+    /// hardware with mpeg_vsh370.prx. This method is kept for potential
+    /// future use but should NOT be called during active decoding.
     pub fn flush(&mut self) {
-        let mpeg = self.mpeg();
-        // AVC-specific pipeline flush — resets DPB and decoder state
-        // without destroying the MPEG instance.
-        unsafe {
-            crate::sys::sceMpegAvcDecodeFlush(mpeg);
-        }
-        // Re-init AU with 0xFF (required after flush).
-        let au_buffer = (self.ddr_aligned + 0x10000) as *mut c_void;
-        unsafe {
-            core::ptr::write_bytes(
-                &mut self.au as *mut _ as *mut u8,
-                0xFF,
-                core::mem::size_of::<crate::sys::SceMpegAu>(),
-            );
-            crate::sys::sceMpegInitAu(mpeg, au_buffer, &mut self.au);
-        }
+        // NO-OP: all flush APIs crash mid-stream on real hardware.
+        // See psp_me_avc_decode_hang.md for investigation details.
         self.pic_num = 0;
     }
 }
