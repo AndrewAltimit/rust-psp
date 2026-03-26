@@ -690,13 +690,10 @@ impl AvcDecoder {
     /// ME internal state and extend decode lifetime.
     pub fn flush(&mut self) {
         let mpeg = self.mpeg();
+        // AVC-specific pipeline flush — resets DPB and decoder state
+        // without destroying the MPEG instance.
         unsafe {
-            // AVC-specific flush (clears DPB and decoder pipeline).
             crate::sys::sceMpegAvcDecodeFlush(mpeg);
-            // sceMpegInit resets ME internal counters. Calling while a
-            // decoder is active is undocumented but accidentally worked
-            // in testing — the old decoder continued for 32 more frames.
-            let _ = crate::sys::sceMpegInit();
         }
         // Re-init AU with 0xFF (required after flush).
         let au_buffer = (self.ddr_aligned + 0x10000) as *mut c_void;
