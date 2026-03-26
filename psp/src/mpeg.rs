@@ -209,12 +209,12 @@ impl AvcDecoder {
     ///
     /// Returns `MpegError` if any initialization step fails.
     pub fn new(width: u32, height: u32) -> Result<Self, MpegError> {
-        // EXPERIMENT: Force mode 4 / frame_width 512 for all resolutions.
-        // Mode 5 with frame_width 768 causes ME deadlock after ~90 frames
-        // on 656x480 Main profile content. Mode 4 might work even for
-        // >480p content since PMPlayer reportedly used mode 4 for everything.
-        let mpeg_mode = 4;
-        let frame_width = 512u32;
+        // Mode 4 for ≤480p, 5 for larger (PMPlayer convention).
+        // WARNING: Mode 5 has a firmware bug in mpeg_vsh370.prx that causes
+        // ME deadlock after ~90 frames. Mode 4 works reliably but only
+        // supports width ≤480. Content selection should prefer ≤480p.
+        let mpeg_mode = if width > 480 { 5 } else { 4 };
+        let frame_width = if width > 480 { 768u32 } else { 512 };
 
         // Step 1: Init MPEG subsystem (ignore "already init" errors).
         let ret = unsafe { crate::sys::sceMpegInit() };
