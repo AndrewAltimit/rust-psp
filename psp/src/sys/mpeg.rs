@@ -399,6 +399,11 @@ psp_extern! {
         au: *mut SceMpegAu,
     ) -> i32;
 
+    #[psp(0x11CAB459)]
+    /// Flush the AVC decoder pipeline, clearing internal decode state
+    /// and reference frames without resetting the full MPEG instance.
+    pub fn sceMpegAvcDecodeFlush(handle: SceMpeg) -> i32;
+
     #[psp(0xCF3547A2)]
     /// Get detailed decode results including YCbCr buffer pointers.
     ///

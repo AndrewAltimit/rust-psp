@@ -684,12 +684,21 @@ impl AvcDecoder {
     ///
     /// Use this to prevent DPB overflow on content with many reference
     /// frames that exceeds the 2MB DDR workspace.
+    /// Flush the AVC decoder pipeline. Uses `sceMpegAvcDecodeFlush` which
+    /// resets only the H.264 decoder state (not the full MPEG instance).
+    /// Also calls `sceMpegInit` which was accidentally found to reset
+    /// ME internal state and extend decode lifetime.
     pub fn flush(&mut self) {
         let mpeg = self.mpeg();
         unsafe {
-            crate::sys::sceMpegFlushAllStream(mpeg);
+            // AVC-specific flush (clears DPB and decoder pipeline).
+            crate::sys::sceMpegAvcDecodeFlush(mpeg);
+            // sceMpegInit resets ME internal counters. Calling while a
+            // decoder is active is undocumented but accidentally worked
+            // in testing — the old decoder continued for 32 more frames.
+            let _ = crate::sys::sceMpegInit();
         }
-        // Re-init AU with 0xFF (required after flush, same as initial setup).
+        // Re-init AU with 0xFF (required after flush).
         let au_buffer = (self.ddr_aligned + 0x10000) as *mut c_void;
         unsafe {
             core::ptr::write_bytes(
