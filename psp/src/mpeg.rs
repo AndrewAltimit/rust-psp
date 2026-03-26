@@ -423,7 +423,7 @@ impl AvcDecoder {
         let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
-            crate::sys::sceMpegAvcDecode(mpeg, &mut self.au, 512, buf_arg, &mut self.pic_num)
+            crate::sys::sceMpegAvcDecode(mpeg, &mut self.au, self.frame_width as i32, buf_arg, &mut self.pic_num)
         };
         if ret < 0 {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
@@ -571,7 +571,7 @@ impl AvcDecoder {
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegAvcDecode(
-                mpeg, &mut self.au, 512, buf_arg, &mut self.pic_num,
+                mpeg, &mut self.au, self.frame_width as i32, buf_arg, &mut self.pic_num,
             )
         };
         if ret < 0 {
