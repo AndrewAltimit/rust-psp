@@ -324,10 +324,14 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Step 8: Set decode mode to ABGR 8888.
+        // Step 8: Set decode mode.
+        // Use Psm5650 (RGB565, 2 bytes/pixel) instead of Psm8888
+        // (ABGR, 4 bytes/pixel) to halve the ME's internal CSC output
+        // buffer usage. Mode 5 deadlocks after ~90 frames with Psm8888,
+        // possibly due to output buffer accumulation in the ME firmware.
         let mut mode = crate::sys::SceMpegAvcMode {
             unk0: -1,
-            pixel_format: crate::sys::DisplayPixelFormat::Psm8888,
+            pixel_format: crate::sys::DisplayPixelFormat::Psm5650,
         };
         let ret = unsafe { crate::sys::sceMpegAvcDecodeMode(mpeg, &mut mode) };
         if ret < 0 {
@@ -339,9 +343,11 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Output pixel buffer (stride × aligned_height × 4 bytes ABGR).
+        // Output pixel buffer (stride × aligned_height × bpp).
+        // Psm5650 = 2 bytes/pixel, Psm8888 = 4 bytes/pixel.
+        let bpp = 2usize; // Psm5650
         let out_h = ((height + 15) / 16) * 16;
-        let output_buf = vec![0u8; frame_width as usize * out_h as usize * 4];
+        let output_buf = vec![0u8; frame_width as usize * out_h as usize * bpp];
 
         Ok(Self {
             mpeg_storage,
@@ -494,25 +500,22 @@ impl AvcDecoder {
 
         DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
 
-        // Copy from stride-aligned output to tight pixel buffer,
-        // fixing alpha (CSC outputs A=0x00, we need A=0xFF).
+        // Copy from stride-aligned output to tight pixel buffer.
+        // Psm5650: 2 bytes/pixel RGB565, no alpha fixup needed.
+        let bpp = 2usize;
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
-        let mut pixels = vec![0u8; w * h * 4];
+        let mut pixels = vec![0u8; w * h * bpp];
         for row in 0..h {
-            let src_off = row * stride * 4;
-            let dst_off = row * w * 4;
+            let src_off = row * stride * bpp;
+            let dst_off = row * w * bpp;
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     self.output_buf.as_ptr().add(src_off),
                     pixels.as_mut_ptr().add(dst_off),
-                    w * 4,
+                    w * bpp,
                 );
-            }
-            // Fix alpha channel to 0xFF (fully opaque).
-            for x in 0..w {
-                pixels[dst_off + x * 4 + 3] = 0xFF;
             }
         }
 
@@ -640,25 +643,23 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
+        let bpp = 2usize; // Psm5650
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
-        let needed = w * h * 4;
+        let needed = w * h * bpp;
         if dst.len() < needed {
             return Err(MpegError(-1));
         }
         for row in 0..h {
-            let src_off = row * stride * 4;
-            let dst_off = row * w * 4;
+            let src_off = row * stride * bpp;
+            let dst_off = row * w * bpp;
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     self.output_buf.as_ptr().add(src_off),
                     dst.as_mut_ptr().add(dst_off),
-                    w * 4,
+                    w * bpp,
                 );
-            }
-            for x in 0..w {
-                dst[dst_off + x * 4 + 3] = 0xFF;
             }
         }
 
