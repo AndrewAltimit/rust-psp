@@ -235,15 +235,18 @@ impl AvcDecoder {
             unsafe { p.add(p.align_offset(64)) }
         };
 
-        // Step 3: Allocate DDR top — 2MB workspace, 4MB-aligned.
-        // The ME writes decoded YCbCr frames here. Without this pointer,
-        // sceMpegAvcDecode returns 0x80628002 (AVC_DECODE_FATAL).
+        // Step 3: Allocate DDR top — 4MB workspace, 4MB-aligned.
+        // The ME writes decoded YCbCr frames AND per-frame bookkeeping
+        // here. The default 2MB from PMPlayer only leaves ~207KB for
+        // bookkeeping at 656x480 with 3 refs, causing ME deadlock after
+        // ~90 frames when the bookkeeping space overflows. 4MB gives
+        // enough headroom for sustained decoding.
         let ddr_block = unsafe {
             crate::sys::sceKernelAllocPartitionMemory(
                 crate::sys::SceSysMemPartitionId::SceKernelPrimaryUserPartition,
                 b"MeDdrTop\0".as_ptr(),
                 crate::sys::SceSysMemBlockTypes::Low,
-                0x20_0000 + 0x40_0000, // 2MB + 4MB for alignment
+                0x40_0000 + 0x40_0000, // 4MB + 4MB for alignment
                 core::ptr::null_mut(),
             )
         };
