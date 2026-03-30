@@ -324,8 +324,9 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Step 8: Set decode mode to ABGR 8888 (4 bytes/pixel).
-        // CSC outputs pixels in this format directly.
+        // Step 8: Set decode mode to Psm8888 (ABGR 4 bytes/pixel).
+        // Note: sceMpegBaseCscAvc may ignore this and use its own format.
+        // The 3rd param of sceMpegBaseCscAvc is the output STRIDE in pixels.
         let mut mode = crate::sys::SceMpegAvcMode {
             unk0: -1,
             pixel_format: crate::sys::DisplayPixelFormat::Psm8888,
@@ -340,10 +341,9 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Output pixel buffer (stride × aligned_height × bpp).
-        let bpp = 4usize; // Psm8888
+        // Output pixel buffer — Psm8888 = 4 bytes/pixel.
         let out_h = ((height + 15) / 16) * 16;
-        let output_buf = vec![0u8; frame_width as usize * out_h as usize * bpp];
+        let output_buf = vec![0u8; frame_width as usize * out_h as usize * 4];
 
         Ok(Self {
             mpeg_storage,
@@ -648,7 +648,8 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        let bpp = 4usize; // Psm8888 (ABGR)
+        // Psm8888 = 4 bytes/pixel. CSC stride = frame_width pixels.
+        let bpp = 4usize;
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
@@ -659,6 +660,7 @@ impl AvcDecoder {
 
         // Read from uncached output buffer (same address CSC wrote to).
         let src_base = uncached_out as *const u8;
+
         for row in 0..h {
             let src_off = row * stride * bpp;
             let dst_off = row * w * bpp;
