@@ -338,4 +338,19 @@ psp_extern! {
     ///
     /// Current ME clock frequency in MHz.
     pub fn scePowerGetMeClockFrequency() -> i32;
+
+    #[psp(0x0442D852)]
+    /// Request a cold reset (full hardware reboot).
+    ///
+    /// The PSP will shut down and restart completely, reloading all
+    /// firmware modules and CFW plugins.
+    ///
+    /// # Parameters
+    ///
+    /// - `unk`: Pass 0.
+    ///
+    /// # Return Value
+    ///
+    /// 0 on success, < 0 on error.
+    pub fn scePowerRequestColdReset(unk: i32) -> i32;
 }

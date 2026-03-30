@@ -94,11 +94,11 @@ unsafe extern "C" {
 pub struct SyscallHook {
     /// Trampoline for inline hooks: [saved_instr1, saved_instr2, j orig+8, nop].
     /// Zeroed and unused for syscall-patched hooks.
-    trampoline: [u32; 4],
+    pub trampoline: [u32; 4],
     /// Original function address (from sctrlHENFindFunction).
-    original: *mut u8,
+    pub original: *mut u8,
     /// Whether this hook uses inline patching.
-    is_inline: bool,
+    pub is_inline: bool,
 }
 
 impl SyscallHook {
