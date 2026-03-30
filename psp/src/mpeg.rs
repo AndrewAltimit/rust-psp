@@ -81,8 +81,7 @@ use core::{ffi::c_void, marker::PhantomData};
 /// Tracks which sceMpeg call is currently executing for hang diagnosis.
 /// 0=idle, 1=GetAvcNalAu, 2=AvcDecode, 3=AvcDecodeDetail2, 4=BaseCscAvc.
 /// Read from a watchdog or diagnostic logger on another thread.
-pub static DECODE_STEP: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
+pub static DECODE_STEP: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 /// Error from an sceMpeg operation, wrapping the raw SCE error code.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -427,7 +426,13 @@ impl AvcDecoder {
         let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
-            crate::sys::sceMpegAvcDecode(mpeg, &mut self.au, self.frame_width as i32, buf_arg, &mut self.pic_num)
+            crate::sys::sceMpegAvcDecode(
+                mpeg,
+                &mut self.au,
+                self.frame_width as i32,
+                buf_arg,
+                &mut self.pic_num,
+            )
         };
         if ret < 0 {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
@@ -483,8 +488,7 @@ impl AvcDecoder {
 
         // Pass uncached pointer to CSC — DMA write goes directly to RAM
         // and we'll read from the same uncached address.
-        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000)
-            as *mut c_void;
+        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
                 uncached_out,
@@ -533,9 +537,7 @@ impl AvcDecoder {
     /// allocating a new `Vec`. `dst` must have at least
     /// `width * height * 4` bytes. Returns `Ok(true)` when a frame was
     /// produced, `Ok(false)` when the ME needs more data (reordering).
-    pub fn decode_into(
-        &mut self, nal: &AvcNal<'_>, dst: &mut [u8],
-    ) -> Result<bool, MpegError> {
+    pub fn decode_into(&mut self, nal: &AvcNal<'_>, dst: &mut [u8]) -> Result<bool, MpegError> {
         if nal.data.is_empty() {
             return Ok(false);
         }
@@ -577,7 +579,11 @@ impl AvcDecoder {
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegAvcDecode(
-                mpeg, &mut self.au, self.frame_width as i32, buf_arg, &mut self.pic_num,
+                mpeg,
+                &mut self.au,
+                self.frame_width as i32,
+                buf_arg,
+                &mut self.pic_num,
             )
         };
         if ret < 0 {
@@ -638,8 +644,7 @@ impl AvcDecoder {
 
         // Pass uncached pointer to CSC — DMA write goes directly to RAM
         // and we'll read from the same uncached address.
-        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000)
-            as *mut c_void;
+        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
                 uncached_out,
