@@ -324,14 +324,11 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Step 8: Set decode mode.
-        // Use Psm5650 (RGB565, 2 bytes/pixel) instead of Psm8888
-        // (ABGR, 4 bytes/pixel) to halve the ME's internal CSC output
-        // buffer usage. Mode 5 deadlocks after ~90 frames with Psm8888,
-        // possibly due to output buffer accumulation in the ME firmware.
+        // Step 8: Set decode mode to ABGR 8888 (4 bytes/pixel).
+        // CSC outputs pixels in this format directly.
         let mut mode = crate::sys::SceMpegAvcMode {
             unk0: -1,
-            pixel_format: crate::sys::DisplayPixelFormat::Psm5650,
+            pixel_format: crate::sys::DisplayPixelFormat::Psm8888,
         };
         let ret = unsafe { crate::sys::sceMpegAvcDecodeMode(mpeg, &mut mode) };
         if ret < 0 {
@@ -344,8 +341,7 @@ impl AvcDecoder {
         }
 
         // Output pixel buffer (stride × aligned_height × bpp).
-        // Psm5650 = 2 bytes/pixel, Psm8888 = 4 bytes/pixel.
-        let bpp = 2usize; // Psm5650
+        let bpp = 4usize; // Psm8888
         let out_h = ((height + 15) / 16) * 16;
         let output_buf = vec![0u8; frame_width as usize * out_h as usize * bpp];
 
@@ -630,9 +626,18 @@ impl AvcDecoder {
 
         DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
 
+        // Flush D-cache before CSC so the output buffer has no dirty lines.
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
+
+        // Pass uncached pointer to CSC — DMA write goes directly to RAM
+        // and we'll read from the same uncached address.
+        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000)
+            as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
-                self.output_buf.as_mut_ptr() as *mut c_void,
+                uncached_out,
                 0,
                 csc_width,
                 &csc as *const _ as *mut c_void,
@@ -643,7 +648,7 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        let bpp = 2usize; // Psm5650
+        let bpp = 4usize; // Psm8888 (ABGR)
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
@@ -651,12 +656,15 @@ impl AvcDecoder {
         if dst.len() < needed {
             return Err(MpegError(-1));
         }
+
+        // Read from uncached output buffer (same address CSC wrote to).
+        let src_base = uncached_out as *const u8;
         for row in 0..h {
             let src_off = row * stride * bpp;
             let dst_off = row * w * bpp;
             unsafe {
                 core::ptr::copy_nonoverlapping(
-                    self.output_buf.as_ptr().add(src_off),
+                    src_base.add(src_off),
                     dst.as_mut_ptr().add(dst_off),
                     w * bpp,
                 );
