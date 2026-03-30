@@ -481,9 +481,13 @@ impl AvcDecoder {
 
         DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
 
+        // Pass uncached pointer to CSC — DMA write goes directly to RAM
+        // and we'll read from the same uncached address.
+        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000)
+            as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
-                self.output_buf.as_mut_ptr() as *mut c_void,
+                uncached_out,
                 0,
                 csc_width,
                 &csc as *const _ as *mut c_void,
@@ -497,18 +501,19 @@ impl AvcDecoder {
         DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
 
         // Copy from stride-aligned output to tight pixel buffer.
-        // Psm5650: 2 bytes/pixel RGB565, no alpha fixup needed.
-        let bpp = 2usize;
+        // Psm8888 = 4 bytes/pixel ABGR.
+        let bpp = 4usize;
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
         let mut pixels = vec![0u8; w * h * bpp];
+        let src_base = uncached_out as *const u8;
         for row in 0..h {
             let src_off = row * stride * bpp;
             let dst_off = row * w * bpp;
             unsafe {
                 core::ptr::copy_nonoverlapping(
-                    self.output_buf.as_ptr().add(src_off),
+                    src_base.add(src_off),
                     pixels.as_mut_ptr().add(dst_off),
                     w * bpp,
                 );
