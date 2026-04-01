@@ -4,7 +4,12 @@ version = "1.0.0"
 description = "`cargo build` wrapper for creating Sony PSP executables"
 repository = "https://github.com/AndrewAltimit/rust-psp"
 license = "MIT"
-authors = ["AndrewAltimit"]
+authors = [
+    "Marko Mijalkovic <marko.mijalkovic97@gmail.com>",
+    "Paul Sajna <sajattack@gmail.com>",
+    "Josh Wood <sk83rjosh@gmail.com>",
+    "AndrewAltimit",
+]
 edition = "2024"
 default-run = "cargo-psp"
 
