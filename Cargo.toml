@@ -17,6 +17,7 @@ repository = "https://github.com/AndrewAltimit/rust-psp"
 authors = [
     "Marko Mijalkovic <marko.mijalkovic97@gmail.com>",
     "Paul Sajna <sajattack@gmail.com>",
+    "Josh Wood <sk83rjosh@gmail.com>",
     "AndrewAltimit",
 ]
 
