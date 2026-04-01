@@ -46,10 +46,9 @@ const SOUND_THREAD: i32 = 0x10;
 /// Maximum iterations for OSK polling (~30 seconds at 60 fps).
 const MAX_OSK_ITERATIONS: u32 = 1800;
 
-/// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
-#[repr(C, align(16))]
-struct Align16<T>(T);
-static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+// Reuse the shared display list buffer from dialog.rs (16KB, 16-byte aligned).
+// All utility dialogs are mutually exclusive on the main thread, so sharing is safe.
+use crate::dialog::DIALOG_LIST;
 
 fn make_common(size: u32) -> UtilityDialogCommon {
     UtilityDialogCommon {
@@ -177,13 +176,10 @@ impl OskBuilder {
             // background, then close the frame before updating the
             // utility dialog.  PSPSDK convention: the dialog update
             // must be called **outside** any open GU display list.
-            // SAFETY: DIALOG_LIST is only used by utility dialog loops
-            // which run on the main thread and never overlap.
+            // SAFETY: DIALOG_LIST is shared across dialog/osk/net but all run
+            // on the main thread and never overlap.
             unsafe {
-                crate::sys::sceGuStart(
-                    crate::sys::GuContextType::Direct,
-                    &raw mut DIALOG_LIST as *mut core::ffi::c_void,
-                );
+                crate::sys::sceGuStart(crate::sys::GuContextType::Direct, DIALOG_LIST.as_mut_ptr());
                 crate::sys::sceGuClearColor(0xff00_0000); // opaque black
                 crate::sys::sceGuClear(crate::sys::ClearBuffer::COLOR_BUFFER_BIT);
                 crate::sys::sceGuFinish();

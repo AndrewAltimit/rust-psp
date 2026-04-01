@@ -77,11 +77,21 @@ fn make_message_buf(message: &str) -> [u8; 512] {
 const MAX_DIALOG_ITERATIONS: u32 = 600;
 
 /// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
+/// Only accessed from the main thread, never concurrently.
 #[repr(C, align(16))]
-pub(crate) struct Align16<T>(pub T);
-/// Shared display list for all utility dialog loops. Only accessed from
-/// the main thread, never concurrently.
-pub(crate) static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+pub(crate) struct DialogListBuf(core::cell::UnsafeCell<[u8; 0x4000]>);
+
+// SAFETY: Only accessed from the main thread during dialog polling loops.
+unsafe impl Sync for DialogListBuf {}
+
+impl DialogListBuf {
+    pub(crate) fn as_mut_ptr(&self) -> *mut core::ffi::c_void {
+        self.0.get() as *mut core::ffi::c_void
+    }
+}
+
+pub(crate) static DIALOG_LIST: DialogListBuf =
+    DialogListBuf(core::cell::UnsafeCell::new([0u8; 0x4000]));
 
 /// Create a `UtilityDialogCommon` for the netconf dialog.
 pub(crate) fn make_netconf_common(size: u32) -> UtilityDialogCommon {
@@ -120,10 +130,7 @@ fn run_dialog(params: &mut UtilityMsgDialogParams) -> Result<DialogResult, Dialo
         // SAFETY: DIALOG_LIST is only used by utility dialog loops
         // which run on the main thread and never overlap.
         unsafe {
-            crate::sys::sceGuStart(
-                crate::sys::GuContextType::Direct,
-                &raw mut DIALOG_LIST as *mut core::ffi::c_void,
-            );
+            crate::sys::sceGuStart(crate::sys::GuContextType::Direct, DIALOG_LIST.as_mut_ptr());
             crate::sys::sceGuClearColor(0xff00_0000); // opaque black
             crate::sys::sceGuClear(crate::sys::ClearBuffer::COLOR_BUFFER_BIT);
             crate::sys::sceGuFinish();
