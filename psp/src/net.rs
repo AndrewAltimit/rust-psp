@@ -256,7 +256,7 @@ pub fn connect_dialog() -> Result<(), NetError> {
         unsafe {
             sys::sceGuStart(
                 sys::GuContextType::Direct,
-                &raw mut crate::dialog::DIALOG_LIST as *mut core::ffi::c_void,
+                crate::dialog::DIALOG_LIST.as_mut_ptr(),
             );
             sys::sceGuClearColor(0xff00_0000);
             sys::sceGuClear(sys::ClearBuffer::COLOR_BUFFER_BIT);

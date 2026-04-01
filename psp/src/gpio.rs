@@ -20,7 +20,7 @@
 //! ```
 
 use crate::sys::gpio as nids;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Error from a GPIO operation.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,12 +56,33 @@ type PortClearFn = unsafe extern "C" fn(mask: u32) -> i32;
 type SetPortModeFn = unsafe extern "C" fn(pin: u32, mode: u32) -> i32;
 type GetCaptureFn = unsafe extern "C" fn() -> u32;
 
-static mut PORT_READ: Option<PortReadFn> = None;
-static mut PORT_SET: Option<PortSetFn> = None;
-static mut PORT_CLEAR: Option<PortClearFn> = None;
-static mut SET_PORT_MODE: Option<SetPortModeFn> = None;
-static mut SET_PORT_MODE2: Option<SetPortModeFn> = None;
-static mut GET_CAPTURE: Option<GetCaptureFn> = None;
+/// Stores a resolved function pointer as an `AtomicUsize` (0 = not resolved).
+struct AtomicFnPtr(AtomicUsize);
+
+impl AtomicFnPtr {
+    const fn new() -> Self {
+        Self(AtomicUsize::new(0))
+    }
+
+    fn store(&self, addr: *mut u8) {
+        self.0.store(addr as usize, Ordering::Release);
+    }
+
+    fn load(&self) -> Option<usize> {
+        let v = self.0.load(Ordering::Acquire);
+        if v == 0 { None } else { Some(v) }
+    }
+}
+
+// SAFETY: Function pointers are resolved once in init() and then only read.
+unsafe impl Sync for AtomicFnPtr {}
+
+static PORT_READ: AtomicFnPtr = AtomicFnPtr::new();
+static PORT_SET: AtomicFnPtr = AtomicFnPtr::new();
+static PORT_CLEAR: AtomicFnPtr = AtomicFnPtr::new();
+static SET_PORT_MODE: AtomicFnPtr = AtomicFnPtr::new();
+static SET_PORT_MODE2: AtomicFnPtr = AtomicFnPtr::new();
+static GET_CAPTURE: AtomicFnPtr = AtomicFnPtr::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Resolve GPIO driver NIDs. Call once before using other functions.
@@ -76,32 +97,21 @@ pub unsafe fn init() -> u32 {
     let l = nids::GPIO_LIBRARY.as_ptr();
     let mut count = 0u32;
 
-    unsafe {
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_READ) {
-            PORT_READ = Some(core::mem::transmute(addr));
-            count += 1;
-        }
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_SET) {
-            PORT_SET = Some(core::mem::transmute(addr));
-            count += 1;
-        }
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_PORT_CLEAR) {
-            PORT_CLEAR = Some(core::mem::transmute(addr));
-            count += 1;
-        }
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_SET_PORT_MODE) {
-            SET_PORT_MODE = Some(core::mem::transmute(addr));
-            count += 1;
-        }
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_SET_PORT_MODE2) {
-            SET_PORT_MODE2 = Some(core::mem::transmute(addr));
-            count += 1;
-        }
-        if let Some(addr) = crate::hook::find_function(m, l, nids::NID_GPIO_GET_CAPTURE_PORT) {
-            GET_CAPTURE = Some(core::mem::transmute(addr));
-            count += 1;
-        }
+    macro_rules! try_resolve {
+        ($nid:expr, $slot:expr) => {
+            if let Some(addr) = unsafe { crate::hook::find_function(m, l, $nid) } {
+                $slot.store(addr);
+                count += 1;
+            }
+        };
     }
+
+    try_resolve!(nids::NID_GPIO_PORT_READ, PORT_READ);
+    try_resolve!(nids::NID_GPIO_PORT_SET, PORT_SET);
+    try_resolve!(nids::NID_GPIO_PORT_CLEAR, PORT_CLEAR);
+    try_resolve!(nids::NID_GPIO_SET_PORT_MODE, SET_PORT_MODE);
+    try_resolve!(nids::NID_GPIO_SET_PORT_MODE2, SET_PORT_MODE2);
+    try_resolve!(nids::NID_GPIO_GET_CAPTURE_PORT, GET_CAPTURE);
 
     INITIALIZED.store(true, Ordering::Release);
     count
@@ -111,7 +121,7 @@ pub unsafe fn init() -> u32 {
 ///
 /// Returns `None` if [`init()`] has not been called or NID was not resolved.
 pub fn read_port() -> Option<u32> {
-    let f = unsafe { PORT_READ }?;
+    let f: PortReadFn = unsafe { core::mem::transmute(PORT_READ.load()?) };
     Some(unsafe { f() })
 }
 
@@ -128,7 +138,7 @@ pub fn read_pin(pin: u32) -> Option<bool> {
 
 /// Read the GPIO interrupt/capture status.
 pub fn capture_status() -> Option<u32> {
-    let f = unsafe { GET_CAPTURE }?;
+    let f: GetCaptureFn = unsafe { core::mem::transmute(GET_CAPTURE.load()?) };
     Some(unsafe { f() })
 }
 
@@ -138,7 +148,7 @@ pub fn capture_status() -> Option<u32> {
 ///
 /// **Warning:** Actually drives pins. Crashes on pins 29-31+ on TA-090v2.
 pub fn set_pin_mode(pin: u32, mode: i32) -> Option<i32> {
-    let f = unsafe { SET_PORT_MODE }?;
+    let f: SetPortModeFn = unsafe { core::mem::transmute(SET_PORT_MODE.load()?) };
     Some(unsafe { f(pin, mode as u32) })
 }
 
@@ -147,19 +157,19 @@ pub fn set_pin_mode(pin: u32, mode: i32) -> Option<i32> {
 /// Uses `sceGpioSetPortMode2` (NID 0x317D9D2C). Mode: 0=disable, 2=enable.
 /// Safe for probing — Output Enable register is silicon-locked on TA-090v2.
 pub fn set_pin_mode2(pin: u32, mode: i32) -> Option<i32> {
-    let f = unsafe { SET_PORT_MODE2 }?;
+    let f: SetPortModeFn = unsafe { core::mem::transmute(SET_PORT_MODE2.load()?) };
     Some(unsafe { f(pin, mode as u32) })
 }
 
 /// Drive GPIO pins high.
 pub fn set_pins(mask: u32) -> Option<i32> {
-    let f = unsafe { PORT_SET }?;
+    let f: PortSetFn = unsafe { core::mem::transmute(PORT_SET.load()?) };
     Some(unsafe { f(mask) })
 }
 
 /// Drive GPIO pins low.
 pub fn clear_pins(mask: u32) -> Option<i32> {
-    let f = unsafe { PORT_CLEAR }?;
+    let f: PortClearFn = unsafe { core::mem::transmute(PORT_CLEAR.load()?) };
     Some(unsafe { f(mask) })
 }
 

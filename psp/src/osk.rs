@@ -47,9 +47,14 @@ const SOUND_THREAD: i32 = 0x10;
 const MAX_OSK_ITERATIONS: u32 = 1800;
 
 /// Small display list for utility dialog GU frames (16KB, 16-byte aligned).
+/// Only accessed from the main thread during OSK polling.
 #[repr(C, align(16))]
-struct Align16<T>(T);
-static mut DIALOG_LIST: Align16<[u8; 0x4000]> = Align16([0u8; 0x4000]);
+struct OskDialogListBuf(core::cell::UnsafeCell<[u8; 0x4000]>);
+
+// SAFETY: Only accessed from the main thread during OSK dialog polling.
+unsafe impl Sync for OskDialogListBuf {}
+
+static DIALOG_LIST: OskDialogListBuf = OskDialogListBuf(core::cell::UnsafeCell::new([0u8; 0x4000]));
 
 fn make_common(size: u32) -> UtilityDialogCommon {
     UtilityDialogCommon {
@@ -182,7 +187,7 @@ impl OskBuilder {
             unsafe {
                 crate::sys::sceGuStart(
                     crate::sys::GuContextType::Direct,
-                    &raw mut DIALOG_LIST as *mut core::ffi::c_void,
+                    DIALOG_LIST.0.get() as *mut core::ffi::c_void,
                 );
                 crate::sys::sceGuClearColor(0xff00_0000); // opaque black
                 crate::sys::sceGuClear(crate::sys::ClearBuffer::COLOR_BUFFER_BIT);
