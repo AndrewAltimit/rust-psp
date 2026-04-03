@@ -806,13 +806,22 @@ impl AvcDecoder {
 
 impl Drop for AvcDecoder {
     fn drop(&mut self) {
-        let mpeg = self.mpeg();
+        // sceMpegDelete crashes intermittently on real PSP hardware
+        // (mpeg_vsh370.prx firmware bug). Skip it and leak the sceMpeg
+        // instance (~8KB). The DDR workspace and mpeg_storage are freed
+        // normally. sceMpegFinish is called to reset the ME subsystem
+        // for the next sceMpegCreate.
+        //
+        // The leaked sceMpeg instance is overwritten by the next
+        // sceMpegCreate (uses the same ringbuffer/data region).
         unsafe {
-            crate::sys::sceMpegDelete(mpeg);
-            let _ = Box::from_raw(self.mpeg_storage);
+            // Free DDR workspace (2MB, 4MB-aligned).
             if self.ddr_block >= crate::sys::SceUid(0) {
                 crate::sys::sceKernelFreePartitionMemory(self.ddr_block);
             }
+            // Free mpeg data storage (heap).
+            let _ = Box::from_raw(self.mpeg_storage);
+            // Reset ME subsystem for next use.
             crate::sys::sceMpegFinish();
         }
     }
