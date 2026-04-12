@@ -1,91 +1,193 @@
 //! PSP system memory allocator and C runtime memory functions.
+//!
+//! # Allocator design
+//!
+//! The naive approach (one `sceKernelAllocPartitionMemory` per Rust
+//! allocation) hits a hard PSP firmware limit on the number of
+//! active kernel memory blocks: at roughly 1500–2000 outstanding
+//! blocks the next `sceKernelAllocPartitionMemory` call hangs
+//! indefinitely. The limit is independent of free RAM — confirmed
+//! by repro on PPSSPP and bisection on the OASIS_OS browser
+//! tokenizer (60 KB of HTML produces ~1500 small `String`
+//! allocations and works; 70 KB produces ~1800 and the next
+//! `Vec::push` hangs while 17 MB of heap remains free).
+//!
+//! The fix is to reserve **one** large kernel block at startup and
+//! run [`linked_list_allocator::Heap`] on top of it. Now every Rust
+//! allocation consumes one *userspace* heap node, not one PSP
+//! kernel block. The kernel block count stays at one for the whole
+//! program no matter how many `String`s and `Vec`s the program
+//! creates.
+//!
+//! `HEAP_SIZE` is sized to leave headroom for VRAM textures, GU
+//! command buffer, video decode buffers, and the OS. Kernel-mode
+//! PRX modules use a smaller arena (`KERNEL_HEAP_SIZE`) since they
+//! share kernel partition memory with the rest of the firmware.
 
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::sys::{self, SceSysMemBlockTypes, SceSysMemPartitionId, SceUid};
 use alloc::alloc::{GlobalAlloc, Layout};
 use core::{mem, ptr};
+use linked_list_allocator::Heap;
+use spin::Mutex;
 
-/// Maximum supported alignment (must be a power of 2).
-///
-/// We store the alignment padding offset in a single `u8`. For an alignment of
-/// 128, the worst-case padding is `1 + 127 = 128`, which is the largest value
-/// that fits in `u8`. An alignment of 256 would require up to 256 bytes of
-/// padding, overflowing the `u8` storage.
+/// Userspace heap arena reserved at first allocation. 12 MB on user
+/// builds leaves ~12 MB of the 24 MB user partition for everything
+/// else (textures, GU command buffer, video buffers, audio).
+#[cfg(not(feature = "kernel"))]
+const HEAP_SIZE: usize = 12 * 1024 * 1024;
+
+/// Kernel-mode arena. Kernel partition is much smaller (~512 KB
+/// shared with the firmware) so reserve correspondingly less. The
+/// kernel PRX use case is overlay UI + audio routing — small
+/// allocation footprint compared to the user-mode browser.
+#[cfg(feature = "kernel")]
+const HEAP_SIZE: usize = 256 * 1024;
+
+/// Maximum supported alignment (must be a power of 2). We store the
+/// alignment padding offset in a single `u8` byte before the user
+/// pointer.
 const MAX_ALIGN: usize = 128;
 
-/// An allocator that hooks directly into the PSP OS memory allocator.
+/// Per-allocation header. Lives immediately before the alignment
+/// padding. Stores the total size given to the underlying heap
+/// (header + padding + user data) so `dealloc` can recover the
+/// original allocation without needing the layout from the caller.
+#[repr(C)]
+struct AllocHeader {
+    total_size: u32,
+}
+
+const HEADER_SIZE: usize = mem::size_of::<AllocHeader>();
+const HEADER_OVERHEAD: usize = HEADER_SIZE + MAX_ALIGN;
+
+/// Heap arena. Lazily initialised on first allocation.
+static HEAP: Mutex<Heap> = Mutex::new(Heap::empty());
+
+/// Reserve the underlying kernel block on first allocation.
+/// Idempotent — subsequent calls are a no-op once the heap has been
+/// initialised.
+fn ensure_heap_init(heap: &mut Heap) -> bool {
+    if heap.size() > 0 {
+        return true;
+    }
+    // Use the kernel partition for kernel-mode PRX modules, user
+    // partition otherwise.
+    #[cfg(feature = "kernel")]
+    let partition = SceSysMemPartitionId::SceKernelPrimaryKernelPartition;
+    #[cfg(not(feature = "kernel"))]
+    let partition = SceSysMemPartitionId::SceKernelPrimaryUserPartition;
+    // SAFETY: requesting a private block from the relevant partition.
+    // The block is intentionally leaked for the lifetime of the
+    // process — we want the heap to live as long as the program.
+    let id = unsafe {
+        sys::sceKernelAllocPartitionMemory(
+            partition,
+            &b"rust_heap\0"[0],
+            SceSysMemBlockTypes::Low,
+            HEAP_SIZE as u32,
+            ptr::null_mut(),
+        )
+    };
+    if id.0 < 0 {
+        return false;
+    }
+    // SAFETY: `sceKernelGetBlockHeadAddr` returns the start of the
+    // block we just allocated. The region is HEAP_SIZE bytes and
+    // exclusively owned by the Rust heap.
+    unsafe {
+        let arena_start = sys::sceKernelGetBlockHeadAddr(id) as *mut u8;
+        heap.init(arena_start, HEAP_SIZE);
+    }
+    let _ = id; // Block ID retained implicitly via the leaked allocation.
+    true
+}
+
+/// Free heap memory in bytes (current capacity minus used). Useful
+/// for diagnostics — embedders can call this to check arena pressure.
+pub fn heap_free() -> usize {
+    HEAP.lock().free()
+}
+
+/// Total heap arena size in bytes (the original `HEAP_SIZE`).
+pub fn heap_total() -> usize {
+    let h = HEAP.lock();
+    if h.size() == 0 {
+        HEAP_SIZE
+    } else {
+        h.size()
+    }
+}
+
 struct SystemAlloc;
 
-// Memory block layout:
-//
-//   [SceUid: 4 bytes][padding: 1..=align bytes][user data...]
-//                     ^--- last byte of padding stores padding length
-//
-// The padding always includes at least 1 byte (the length byte itself).
-// `align_offset(layout.align())` is computed from `ptr + 1` (past the
-// length byte position) to find how many more bytes are needed.
 unsafe impl GlobalAlloc for SystemAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.align() > MAX_ALIGN {
+        let user_size = layout.size();
+        let user_align = layout.align();
+        if user_align > MAX_ALIGN || !user_align.is_power_of_two() {
             return ptr::null_mut();
         }
-
-        let Some(size) = layout
-            .size()
-            // We need to store the memory block ID.
-            .checked_add(mem::size_of::<SceUid>())
-            // We also store padding bytes, in case the block returned from the
-            // system is not aligned. The count of padding bytes is also stored
-            // here, in the last byte.
-            .and_then(|s| s.checked_add(layout.align()))
-        else {
+        let Some(total) = user_size.checked_add(HEADER_OVERHEAD) else {
             return ptr::null_mut();
         };
+        let heap_layout = match Layout::from_size_align(total, mem::align_of::<AllocHeader>()) {
+            Ok(l) => l,
+            Err(_) => return ptr::null_mut(),
+        };
 
-        // Use the kernel partition for kernel-mode modules, user
-        // partition otherwise.  The "kernel" feature is only enabled
-        // for kernel PRX crates (module_kernel!).
-        #[cfg(feature = "kernel")]
-        let partition = SceSysMemPartitionId::SceKernelPrimaryKernelPartition;
-        #[cfg(not(feature = "kernel"))]
-        let partition = SceSysMemPartitionId::SceKernelPrimaryUserPartition;
+        let raw = {
+            let mut heap = HEAP.lock();
+            if !ensure_heap_init(&mut heap) {
+                return ptr::null_mut();
+            }
+            match heap.allocate_first_fit(heap_layout) {
+                Ok(nn) => nn.as_ptr(),
+                Err(_) => return ptr::null_mut(),
+            }
+        };
 
-        let id = sys::sceKernelAllocPartitionMemory(
-            partition,
-            &b"block\0"[0],
-            SceSysMemBlockTypes::Low,
-            size as u32,
-            ptr::null_mut(),
-        );
-
-        if id.0 < 0 {
-            return ptr::null_mut();
-        }
-
-        let mut ptr: *mut u8 = sys::sceKernelGetBlockHeadAddr(id).cast();
-        *ptr.cast() = id;
-
-        ptr = ptr.add(mem::size_of::<SceUid>());
-
-        // We must add at least one, to store this value.
-        let offset = ptr.add(1).align_offset(layout.align());
+        // Layout: [AllocHeader][padding 1..=MAX_ALIGN][user data...]
+        // The pad-length byte is stored immediately before the user
+        // pointer so dealloc can recover the start of the block.
+        let after_header = raw.add(HEADER_SIZE);
+        let offset = after_header.add(1).align_offset(user_align);
         if offset == usize::MAX {
-            sys::sceKernelFreePartitionMemory(id);
+            // Pathological alignment for this address — give the
+            // memory back to the heap and bail.
+            HEAP.lock()
+                .deallocate(core::ptr::NonNull::new_unchecked(raw), heap_layout);
             return ptr::null_mut();
         }
-        let align_padding = 1 + offset;
-        *ptr.add(align_padding - 1) = align_padding as u8;
-        ptr.add(align_padding)
+        let pad_len = 1 + offset;
+        debug_assert!(pad_len <= MAX_ALIGN);
+
+        ptr::write(
+            raw.cast::<AllocHeader>(),
+            AllocHeader {
+                total_size: total as u32,
+            },
+        );
+        let user_ptr = after_header.add(pad_len);
+        *user_ptr.sub(1) = pad_len as u8;
+        user_ptr
     }
 
     #[inline(never)]
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        let align_padding = *ptr.sub(1);
-
-        let id = *ptr.sub(align_padding as usize).cast::<SceUid>().offset(-1);
-
-        sys::sceKernelFreePartitionMemory(id);
+        if ptr.is_null() {
+            return;
+        }
+        let pad_len = *ptr.sub(1) as usize;
+        let header_ptr = ptr.sub(pad_len).sub(HEADER_SIZE);
+        let header = ptr::read(header_ptr.cast::<AllocHeader>());
+        let heap_layout = Layout::from_size_align_unchecked(
+            header.total_size as usize,
+            mem::align_of::<AllocHeader>(),
+        );
+        HEAP.lock()
+            .deallocate(core::ptr::NonNull::new_unchecked(header_ptr), heap_layout);
     }
 }
 
@@ -166,10 +268,8 @@ unsafe extern "C" fn memmove(dst: *mut u8, src: *mut u8, num: isize) -> *mut u8 
 #[cfg(not(feature = "stub-only"))]
 unsafe extern "C" fn strlen(s: *mut u8) -> usize {
     let mut len = 0;
-
     while *s.add(len) != 0 {
         len += 1;
     }
-
     len
 }
