@@ -32,11 +32,14 @@ use core::{mem, ptr};
 use linked_list_allocator::Heap;
 use spin::Mutex;
 
-/// Userspace heap arena reserved at first allocation. 12 MB on user
-/// builds leaves ~12 MB of the 24 MB user partition for everything
-/// else (textures, GU command buffer, video buffers, audio).
+/// Userspace heap arena reserved at first allocation. 14 MB on user
+/// builds — sized to fit a `vec![None; ~2500]` of the OASIS browser's
+/// 1240-byte `ComputedStyle` struct (~3 MB) on top of a 5 MB Wikipedia
+/// HTML token + DOM working set. Leaves ~6 MB of the 24 MB user
+/// partition for textures, GU command buffer, video decode buffers,
+/// audio, and the EBOOT code itself.
 #[cfg(not(feature = "kernel"))]
-const HEAP_SIZE: usize = 12 * 1024 * 1024;
+const HEAP_SIZE: usize = 14 * 1024 * 1024;
 
 /// Kernel-mode arena. Kernel partition is much smaller (~512 KB
 /// shared with the firmware) so reserve correspondingly less. The
