@@ -480,11 +480,14 @@ impl File {
     }
 
     pub fn read_buf(&self, mut cursor: BorrowedCursor<'_>) -> io::Result<()> {
+        // BorrowedCursor API as of nightly-2026-04-11:
+        //   `ensure_init(&mut self) -> &mut [u8]`
+        //   `advance_checked(&mut self, n: usize) -> &mut Self`
+        // Older nightlies had `ensure_init -> &mut Self`, `init_mut`,
+        // and `advance_unchecked`. We track upstream.
         let buf = cursor.ensure_init();
-        let n = self.read(buf.init_mut())?;
-        // SAFETY: `n` bytes were just read by `self.read()` into the
-        // initialised portion of the BorrowedBuf backing `cursor`.
-        unsafe { cursor.advance_unchecked(n) };
+        let n = self.read(buf)?;
+        cursor.advance_checked(n);
         Ok(())
     }
 
