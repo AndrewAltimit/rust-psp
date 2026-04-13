@@ -61,6 +61,13 @@ jobs:
           echo "USER_ID=$(id -u)" >> $GITHUB_ENV
           echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
 
+      # Rebuild the rust-ci image so Dockerfile changes (e.g. a
+      # new pinned nightly) actually take effect. `docker compose
+      # run` alone would reuse the cached image and silently run
+      # with a stale toolchain.
+      - name: Build rust-ci image
+        run: docker compose --profile ci build rust-ci
+
       # ── Formatting ──────────────────────────────────────────────
       - name: Format check (cargo-psp)
         run: docker compose --profile ci run --rm rust-ci cargo fmt --manifest-path cargo-psp/Cargo.toml --all -- --check
