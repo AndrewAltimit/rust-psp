@@ -13,6 +13,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # Install nightly toolchain with rust-src (required for -Zbuild-std on mips)
+# Cache-bust 2026-04-13: the BorrowedCursor API was reshaped in nightly
+# 2026-04-11 (`ensure_init -> &mut [u8]`, `advance_checked`). The cached
+# image had an older nightly; force a rebuild so the vendored std
+# overlay matches.
 RUN rustup install nightly \
     && rustup component add rustfmt clippy \
     && rustup component add --toolchain nightly rustfmt rust-src
