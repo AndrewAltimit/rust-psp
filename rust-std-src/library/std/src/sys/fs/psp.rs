@@ -482,6 +482,8 @@ impl File {
     pub fn read_buf(&self, mut cursor: BorrowedCursor<'_>) -> io::Result<()> {
         let buf = cursor.ensure_init();
         let n = self.read(buf.init_mut())?;
+        // SAFETY: `n` bytes were just read by `self.read()` into the
+        // initialised portion of the BorrowedBuf backing `cursor`.
         unsafe { cursor.advance_unchecked(n) };
         Ok(())
     }

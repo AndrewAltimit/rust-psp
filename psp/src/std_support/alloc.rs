@@ -1,76 +1,48 @@
-use crate::sys::{self, SceSysMemBlockTypes, SceSysMemPartitionId, SceUid};
-use core::{mem, ptr};
+//! `__psp_alloc` / `__psp_dealloc` / `__psp_realloc` C-ABI shims.
+//!
+//! `std::sys::alloc::psp::System` declares these as `extern "C"` and
+//! routes calls to `std::alloc::System::alloc` through them. We
+//! delegate to the global Rust allocator (`alloc::alloc::alloc`)
+//! defined in `alloc_impl.rs` so std and `#[global_allocator]`
+//! callers share one arena. See `alloc_impl.rs` for the
+//! linked-list arena rationale.
 
-/// Maximum supported alignment (must be a power of 2).
-///
-/// We store the alignment padding offset in a single `u8`. For an alignment of
-/// 128, the worst-case padding is `1 + 127 = 128`, which is the largest value
-/// that fits in `u8`. An alignment of 256 would require up to 256 bytes of
-/// padding, overflowing the `u8` storage.
+use alloc::alloc::{alloc, dealloc};
+use core::alloc::Layout;
+use core::ptr;
+
+/// Maximum supported alignment. Mirrors `alloc_impl::MAX_ALIGN`.
 const MAX_ALIGN: usize = 128;
 
-/// Allocate memory with alignment support.
-///
-/// Uses PSP kernel partition memory. Same algorithm as the global allocator in
-/// `alloc_impl.rs`, but exposed via FFI for std's System allocator.
+/// Allocate `size` bytes with `align` alignment via the global
+/// Rust allocator.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn __psp_alloc(size: u32, align: u32) -> *mut u8 {
-    let align = align as usize;
-
-    // Alignment padding is stored as u8, so we cannot support align > 255.
-    if align > MAX_ALIGN {
+    let user_align = align as usize;
+    if user_align > MAX_ALIGN || !user_align.is_power_of_two() {
         return ptr::null_mut();
     }
-
-    let Some(total) = (size as usize)
-        .checked_add(mem::size_of::<SceUid>())
-        .and_then(|s| s.checked_add(align))
-    else {
-        return ptr::null_mut();
+    let layout = match Layout::from_size_align(size as usize, user_align) {
+        Ok(l) => l,
+        Err(_) => return ptr::null_mut(),
     };
-
-    let id = unsafe {
-        sys::sceKernelAllocPartitionMemory(
-            SceSysMemPartitionId::SceKernelPrimaryUserPartition,
-            &b"std_block\0"[0],
-            SceSysMemBlockTypes::Low,
-            total as u32,
-            ptr::null_mut(),
-        )
-    };
-
-    if id.0 < 0 {
-        return ptr::null_mut();
-    }
-
-    unsafe {
-        let mut p: *mut u8 = sys::sceKernelGetBlockHeadAddr(id).cast();
-        // Store the block ID at the start.
-        *p.cast() = id;
-        p = p.add(mem::size_of::<SceUid>());
-        // Align and store padding count.
-        let offset = p.add(1).align_offset(align);
-        if offset == usize::MAX {
-            sys::sceKernelFreePartitionMemory(id);
-            return ptr::null_mut();
-        }
-        let align_padding = 1 + offset;
-        *p.add(align_padding - 1) = align_padding as u8;
-        p.add(align_padding)
-    }
+    unsafe { alloc(layout) }
 }
 
-/// Free memory allocated by `__psp_alloc`.
+/// Free a block previously returned by `__psp_alloc`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn __psp_dealloc(ptr: *mut u8) {
-    unsafe {
-        let align_padding = *ptr.sub(1);
-        let id = *ptr.sub(align_padding as usize).cast::<SceUid>().offset(-1);
-        sys::sceKernelFreePartitionMemory(id);
+    if ptr.is_null() {
+        return;
     }
+    // Layout is unused by the global allocator's dealloc shim
+    // (`alloc_impl.rs` recovers size from its own per-block header)
+    // so passing a placeholder is safe.
+    let layout = unsafe { Layout::from_size_align_unchecked(1, 1) };
+    unsafe { dealloc(ptr, layout) };
 }
 
-/// Reallocate memory. Allocates a new block, copies data, frees old.
+/// Reallocate `old_ptr` to `new_size`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn __psp_realloc(
     old_ptr: *mut u8,

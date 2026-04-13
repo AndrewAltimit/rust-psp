@@ -147,6 +147,11 @@ struct Mp4AvcNalStruct {
     mode: i32, // 3 = first frame (IDR), 0 = subsequent
 }
 
+/// Result from the internal decode_and_csc helper.
+struct CscResult {
+    uncached_ptr: *mut c_void,
+}
+
 /// Mp4AvcCscStruct — passed to `sceMpegBaseCscAvc` for YCbCr→ABGR conversion.
 ///
 /// Layout: height in macroblocks, width in macroblocks, two mode fields,
@@ -381,137 +386,16 @@ impl AvcDecoder {
     /// stored directly in MP4 `mdat`. Do NOT convert to Annex B start codes.
     /// The `prefix_size` field tells the ME how to parse the length fields.
     pub fn decode(&mut self, nal: &AvcNal<'_>) -> Result<Option<DecodedFrame>, MpegError> {
-        if nal.data.is_empty() {
-            return Ok(None);
-        }
+        let csc = self.decode_and_csc(nal)?;
+        let Some(csc) = csc else { return Ok(None) };
 
-        let mpeg = self.mpeg();
-
-        // Build NAL struct for sceMpegGetAvcNalAu.
-        let mut nal_struct = Mp4AvcNalStruct {
-            sps_buffer: nal.sps.as_ptr(),
-            sps_size: nal.sps.len() as i32,
-            pps_buffer: nal.pps.as_ptr(),
-            pps_size: nal.pps.len() as i32,
-            nal_prefix_size: nal.prefix_size,
-            nal_buffer: nal.data.as_ptr(),
-            nal_size: nal.data.len() as i32,
-            mode: if nal.is_first_frame { 3 } else { 0 },
-        };
-
-        unsafe {
-            crate::sys::sceKernelDcacheWritebackInvalidateAll();
-        }
-
-        // Track decode step for hang diagnosis. Caller can read
-        // DECODE_STEP to see which sceMpeg call hung.
-        DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
-
-        // Feed NAL to ME.
-        let ret = unsafe {
-            crate::sys::sceMpegGetAvcNalAu(
-                mpeg,
-                &mut nal_struct as *mut _ as *mut c_void,
-                &mut self.au,
-            )
-        };
-        if ret < 0 {
-            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
-            return Err(MpegError(ret));
-        }
-
-        DECODE_STEP.store(2, core::sync::atomic::Ordering::Relaxed);
-
-        // Decode.
-        let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
-        let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
-        let ret = unsafe {
-            crate::sys::sceMpegAvcDecode(
-                mpeg,
-                &mut self.au,
-                self.frame_width as i32,
-                buf_arg,
-                &mut self.pic_num,
-            )
-        };
-        if ret < 0 {
-            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
-            return Err(MpegError(ret));
-        }
-
-        DECODE_STEP.store(3, core::sync::atomic::Ordering::Relaxed);
-
-        if self.pic_num <= 0 {
-            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
-            return Ok(None); // No picture yet (B-frame reordering).
-        }
-
-        // Get YCbCr buffer pointers from decode detail.
-        let mut detail2: *mut c_void = core::ptr::null_mut();
-        let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
-        if ret < 0 || detail2.is_null() {
-            return Err(MpegError(if ret < 0 { ret } else { -1 }));
-        }
-
-        // Extract info and YCbCr pointers from detail struct.
-        let detail_ptr = detail2 as *const u32;
-        let info_ptr = unsafe { *detail_ptr.add(4) } as *const u32;
-        let yuv_ptr = unsafe { *detail_ptr.add(11) } as *const u32;
-
-        if info_ptr.is_null() || yuv_ptr.is_null() {
-            return Ok(None);
-        }
-
-        // Build CSC struct for hardware YCbCr→ABGR conversion.
-        let info_w = unsafe { *info_ptr.add(2) } as u32;
-        let info_h = unsafe { *info_ptr.add(3) } as u32;
-        let csc_width = if info_w > 480 { 768i32 } else { 512 };
-
-        let csc = Mp4AvcCscStruct {
-            height: ((info_h + 15) / 16) as i32,
-            width: ((info_w + 15) / 16) as i32,
-            mode0: 0,
-            mode1: 0,
-            buffers: [
-                unsafe { *yuv_ptr.add(0) } as *const c_void,
-                unsafe { *yuv_ptr.add(1) } as *const c_void,
-                unsafe { *yuv_ptr.add(2) } as *const c_void,
-                unsafe { *yuv_ptr.add(3) } as *const c_void,
-                unsafe { *yuv_ptr.add(4) } as *const c_void,
-                unsafe { *yuv_ptr.add(5) } as *const c_void,
-                unsafe { *yuv_ptr.add(6) } as *const c_void,
-                unsafe { *yuv_ptr.add(7) } as *const c_void,
-            ],
-        };
-
-        DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
-
-        // Pass uncached pointer to CSC — DMA write goes directly to RAM
-        // and we'll read from the same uncached address.
-        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
-        let ret = unsafe {
-            crate::sys::sceMpegBaseCscAvc(
-                uncached_out,
-                0,
-                csc_width,
-                &csc as *const _ as *mut c_void,
-            )
-        };
-        if ret < 0 {
-            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
-            return Err(MpegError(ret));
-        }
-
-        DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
-
-        // Copy from stride-aligned output to tight pixel buffer.
-        // Psm8888 = 4 bytes/pixel ABGR.
+        // Copy from stride-aligned CSC output to tight pixel buffer.
         let bpp = 4usize;
         let w = self.width as usize;
         let h = self.height as usize;
         let stride = self.frame_width as usize;
         let mut pixels = vec![0u8; w * h * bpp];
-        let src_base = uncached_out as *const u8;
+        let src_base = csc.uncached_ptr as *const u8;
         for row in 0..h {
             let src_off = row * stride * bpp;
             let dst_off = row * w * bpp;
@@ -538,10 +422,106 @@ impl AvcDecoder {
     /// `width * height * 4` bytes. Returns `Ok(true)` when a frame was
     /// produced, `Ok(false)` when the ME needs more data (reordering).
     pub fn decode_into(&mut self, nal: &AvcNal<'_>, dst: &mut [u8]) -> Result<bool, MpegError> {
+        // Decode + CSC into internal output_buf, then copy to dst with
+        // stride conversion (CSC stride → tight-packed width).
+        let csc = self.decode_and_csc(nal)?;
+        let Some(csc) = csc else { return Ok(false) };
+
+        let bpp = 4usize;
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let stride = self.frame_width as usize;
+        let needed = w * h * bpp;
+        if dst.len() < needed {
+            return Err(MpegError(-1));
+        }
+
+        let src_base = csc.uncached_ptr as *const u8;
+        for row in 0..h {
+            let src_off = row * stride * bpp;
+            let dst_off = row * w * bpp;
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    src_base.add(src_off),
+                    dst.as_mut_ptr().add(dst_off),
+                    w * bpp,
+                );
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Decode one H.264 access unit, writing CSC output directly to a
+    /// caller-provided buffer at the CSC's native stride (512 or 768 pixels).
+    ///
+    /// This avoids two stride-conversion copies:
+    /// 1. CSC output (stride=512) → tight-packed (stride=width) in decode_into
+    /// 2. tight-packed → texture buffer (stride=512) in update_video_texture
+    ///
+    /// `dst` must be at least `stride() * ceil16(height) * 4` bytes.
+    /// After return, the caller must handle alpha fixup (CSC outputs
+    /// alpha=0x00) and D-cache flush for the GU to see the pixels.
+    ///
+    /// Returns `Ok(true)` when a frame was produced.
+    pub fn decode_into_strided(
+        &mut self,
+        nal: &AvcNal<'_>,
+        dst: &mut [u8],
+    ) -> Result<bool, MpegError> {
+        let csc_info = self.decode_and_csc(nal)?;
+        let Some(csc) = csc_info else {
+            return Ok(false);
+        };
+
+        // CSC already wrote to internal output_buf via uncached pointer.
+        // Copy from there to dst at native stride (no conversion needed).
+        let bpp = 4usize;
+        let h = self.height as usize;
+        let stride = self.frame_width as usize;
+        let total = stride * ((h + 15) / 16 * 16) * bpp;
+
+        if dst.len() < total {
+            return Err(MpegError(-1));
+        }
+
+        let src_base = csc.uncached_ptr as *const u8;
+        unsafe {
+            core::ptr::copy_nonoverlapping(src_base, dst.as_mut_ptr(), total);
+        }
+
+        Ok(true)
+    }
+
+    /// Decode one H.264 access unit with CSC output written directly to
+    /// the caller's buffer, eliminating the intermediate copy.
+    ///
+    /// `dst` must be at least `stride() * ceil16(height) * 4` bytes and
+    /// must be 16-byte aligned (for D-cache operations).
+    /// CSC writes via uncached pointer directly to `dst`, so no D-cache
+    /// flush of the source is needed. The caller must flush `dst` for
+    /// GU visibility if `dst` is in cached memory.
+    ///
+    /// Returns `Ok(true)` when a frame was produced.
+    pub fn decode_csc_direct(
+        &mut self,
+        nal: &AvcNal<'_>,
+        dst: &mut [u8],
+    ) -> Result<bool, MpegError> {
         if nal.data.is_empty() {
             return Ok(false);
         }
 
+        let bpp = 4usize;
+        let h = self.height as usize;
+        let stride = self.frame_width as usize;
+        let total = stride * ((h + 15) / 16 * 16) * bpp;
+
+        if dst.len() < total {
+            return Err(MpegError(-1));
+        }
+
+        // Steps 1-3: decode (same as decode_and_csc).
         let mpeg = self.mpeg();
 
         let mut nal_struct = Mp4AvcNalStruct {
@@ -560,7 +540,6 @@ impl AvcDecoder {
         }
 
         DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
-
         let ret = unsafe {
             crate::sys::sceMpegGetAvcNalAu(
                 mpeg,
@@ -574,7 +553,6 @@ impl AvcDecoder {
         }
 
         DECODE_STEP.store(2, core::sync::atomic::Ordering::Relaxed);
-
         let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
@@ -592,7 +570,6 @@ impl AvcDecoder {
         }
 
         DECODE_STEP.store(3, core::sync::atomic::Ordering::Relaxed);
-
         if self.pic_num <= 0 {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Ok(false);
@@ -608,7 +585,6 @@ impl AvcDecoder {
         let detail_ptr = detail2 as *const u32;
         let info_ptr = unsafe { *detail_ptr.add(4) } as *const u32;
         let yuv_ptr = unsafe { *detail_ptr.add(11) } as *const u32;
-
         if info_ptr.is_null() || yuv_ptr.is_null() {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Ok(false);
@@ -635,15 +611,136 @@ impl AvcDecoder {
             ],
         };
 
+        // Step 4: CSC writes directly to caller's buffer.
         DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
-
-        // Flush D-cache before CSC so the output buffer has no dirty lines.
         unsafe {
             crate::sys::sceKernelDcacheWritebackInvalidateAll();
         }
 
-        // Pass uncached pointer to CSC — DMA write goes directly to RAM
-        // and we'll read from the same uncached address.
+        let uncached_dst = (dst.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
+        let ret = unsafe {
+            crate::sys::sceMpegBaseCscAvc(
+                uncached_dst,
+                0,
+                csc_width,
+                &csc as *const _ as *mut c_void,
+            )
+        };
+        DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+        if ret < 0 {
+            return Err(MpegError(ret));
+        }
+
+        Ok(true)
+    }
+
+    /// The CSC output stride in pixels (512 for ≤480p, 768 for >480p).
+    pub fn stride(&self) -> u32 {
+        self.frame_width
+    }
+
+    /// Shared decode + CSC logic used by both `decode_into` and
+    /// `decode_into_strided`. Returns the uncached pointer to the
+    /// CSC output in `self.output_buf`, or `None` if no picture.
+    fn decode_and_csc(&mut self, nal: &AvcNal<'_>) -> Result<Option<CscResult>, MpegError> {
+        if nal.data.is_empty() {
+            return Ok(None);
+        }
+
+        let mpeg = self.mpeg();
+
+        let mut nal_struct = Mp4AvcNalStruct {
+            sps_buffer: nal.sps.as_ptr(),
+            sps_size: nal.sps.len() as i32,
+            pps_buffer: nal.pps.as_ptr(),
+            pps_size: nal.pps.len() as i32,
+            nal_prefix_size: nal.prefix_size,
+            nal_buffer: nal.data.as_ptr(),
+            nal_size: nal.data.len() as i32,
+            mode: if nal.is_first_frame { 3 } else { 0 },
+        };
+
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
+
+        DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
+        let ret = unsafe {
+            crate::sys::sceMpegGetAvcNalAu(
+                mpeg,
+                &mut nal_struct as *mut _ as *mut c_void,
+                &mut self.au,
+            )
+        };
+        if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+            return Err(MpegError(ret));
+        }
+
+        DECODE_STEP.store(2, core::sync::atomic::Ordering::Relaxed);
+        let mut output_ptr = self.output_buf.as_mut_ptr() as *mut c_void;
+        let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
+        let ret = unsafe {
+            crate::sys::sceMpegAvcDecode(
+                mpeg,
+                &mut self.au,
+                self.frame_width as i32,
+                buf_arg,
+                &mut self.pic_num,
+            )
+        };
+        if ret < 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+            return Err(MpegError(ret));
+        }
+
+        DECODE_STEP.store(3, core::sync::atomic::Ordering::Relaxed);
+        if self.pic_num <= 0 {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+            return Ok(None);
+        }
+
+        let mut detail2: *mut c_void = core::ptr::null_mut();
+        let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
+        if ret < 0 || detail2.is_null() {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+            return Err(MpegError(if ret < 0 { ret } else { -1 }));
+        }
+
+        let detail_ptr = detail2 as *const u32;
+        let info_ptr = unsafe { *detail_ptr.add(4) } as *const u32;
+        let yuv_ptr = unsafe { *detail_ptr.add(11) } as *const u32;
+        if info_ptr.is_null() || yuv_ptr.is_null() {
+            DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
+            return Ok(None);
+        }
+
+        let info_w = unsafe { *info_ptr.add(2) } as u32;
+        let info_h = unsafe { *info_ptr.add(3) } as u32;
+        let csc_width = if info_w > 480 { 768i32 } else { 512 };
+
+        let csc = Mp4AvcCscStruct {
+            height: ((info_h + 15) / 16) as i32,
+            width: ((info_w + 15) / 16) as i32,
+            mode0: 0,
+            mode1: 0,
+            buffers: [
+                unsafe { *yuv_ptr.add(0) } as *const c_void,
+                unsafe { *yuv_ptr.add(1) } as *const c_void,
+                unsafe { *yuv_ptr.add(2) } as *const c_void,
+                unsafe { *yuv_ptr.add(3) } as *const c_void,
+                unsafe { *yuv_ptr.add(4) } as *const c_void,
+                unsafe { *yuv_ptr.add(5) } as *const c_void,
+                unsafe { *yuv_ptr.add(6) } as *const c_void,
+                unsafe { *yuv_ptr.add(7) } as *const c_void,
+            ],
+        };
+
+        DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
+
         let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
@@ -658,32 +755,9 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        // Psm8888 = 4 bytes/pixel. CSC stride = frame_width pixels.
-        let bpp = 4usize;
-        let w = self.width as usize;
-        let h = self.height as usize;
-        let stride = self.frame_width as usize;
-        let needed = w * h * bpp;
-        if dst.len() < needed {
-            return Err(MpegError(-1));
-        }
-
-        // Read from uncached output buffer (same address CSC wrote to).
-        let src_base = uncached_out as *const u8;
-
-        for row in 0..h {
-            let src_off = row * stride * bpp;
-            let dst_off = row * w * bpp;
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    src_base.add(src_off),
-                    dst.as_mut_ptr().add(dst_off),
-                    w * bpp,
-                );
-            }
-        }
-
-        Ok(true)
+        Ok(Some(CscResult {
+            uncached_ptr: uncached_out,
+        }))
     }
 
     /// Video width in pixels.
@@ -752,13 +826,22 @@ impl AvcDecoder {
 
 impl Drop for AvcDecoder {
     fn drop(&mut self) {
-        let mpeg = self.mpeg();
+        // sceMpegDelete crashes intermittently on real PSP hardware
+        // (mpeg_vsh370.prx firmware bug). Skip it and leak the sceMpeg
+        // instance (~8KB). The DDR workspace and mpeg_storage are freed
+        // normally. sceMpegFinish is called to reset the ME subsystem
+        // for the next sceMpegCreate.
+        //
+        // The leaked sceMpeg instance is overwritten by the next
+        // sceMpegCreate (uses the same ringbuffer/data region).
         unsafe {
-            crate::sys::sceMpegDelete(mpeg);
-            let _ = Box::from_raw(self.mpeg_storage);
+            // Free DDR workspace (2MB, 4MB-aligned).
             if self.ddr_block >= crate::sys::SceUid(0) {
                 crate::sys::sceKernelFreePartitionMemory(self.ddr_block);
             }
+            // Free mpeg data storage (heap).
+            let _ = Box::from_raw(self.mpeg_storage);
+            // Reset ME subsystem for next use.
             crate::sys::sceMpegFinish();
         }
     }
