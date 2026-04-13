@@ -470,7 +470,9 @@ impl AvcDecoder {
         dst: &mut [u8],
     ) -> Result<bool, MpegError> {
         let csc_info = self.decode_and_csc(nal)?;
-        let Some(_) = csc_info else { return Ok(false) };
+        let Some(csc) = csc_info else {
+            return Ok(false);
+        };
 
         // CSC already wrote to internal output_buf via uncached pointer.
         // Copy from there to dst at native stride (no conversion needed).
@@ -483,7 +485,7 @@ impl AvcDecoder {
             return Err(MpegError(-1));
         }
 
-        let src_base = csc_info.unwrap().uncached_ptr as *const u8;
+        let src_base = csc.uncached_ptr as *const u8;
         unsafe {
             core::ptr::copy_nonoverlapping(src_base, dst.as_mut_ptr(), total);
         }
