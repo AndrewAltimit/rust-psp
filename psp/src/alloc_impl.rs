@@ -187,11 +187,7 @@ pub fn heap_free() -> usize {
 /// Total heap arena size in bytes (the original `HEAP_SIZE`).
 pub fn heap_total() -> usize {
     let h = lock_heap();
-    if h.size() == 0 {
-        HEAP_SIZE
-    } else {
-        h.size()
-    }
+    if h.size() == 0 { HEAP_SIZE } else { h.size() }
 }
 
 struct SystemAlloc;
@@ -255,15 +251,18 @@ unsafe impl GlobalAlloc for SystemAlloc {
                     header.size_or_id as usize,
                     mem::align_of::<AllocHeader>(),
                 );
-                lock_heap()
-                    .deallocate(core::ptr::NonNull::new_unchecked(header_ptr), heap_layout);
+                lock_heap().deallocate(core::ptr::NonNull::new_unchecked(header_ptr), heap_layout);
             },
             TAG_KERNEL => {
                 let id = SceUid(header.size_or_id as i32);
                 sys::sceKernelFreePartitionMemory(id);
             },
             _ => {
-                // Header corruption — leak rather than crash.
+                dprintln!(
+                    "alloc: corrupt header tag {:#x} at {:?}",
+                    header.tag,
+                    header_ptr
+                );
             },
         }
     }
@@ -311,12 +310,9 @@ unsafe fn write_header_and_align(
         if tag == TAG_KERNEL {
             sys::sceKernelFreePartitionMemory(SceUid(size_or_id as i32));
         } else {
-            let heap_layout = Layout::from_size_align_unchecked(
-                total,
-                mem::align_of::<AllocHeader>(),
-            );
-            lock_heap()
-                .deallocate(core::ptr::NonNull::new_unchecked(raw), heap_layout);
+            let heap_layout =
+                Layout::from_size_align_unchecked(total, mem::align_of::<AllocHeader>());
+            lock_heap().deallocate(core::ptr::NonNull::new_unchecked(raw), heap_layout);
         }
         return ptr::null_mut();
     }

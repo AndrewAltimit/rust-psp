@@ -465,7 +465,9 @@ impl AvcDecoder {
     ///
     /// Returns `Ok(true)` when a frame was produced.
     pub fn decode_into_strided(
-        &mut self, nal: &AvcNal<'_>, dst: &mut [u8],
+        &mut self,
+        nal: &AvcNal<'_>,
+        dst: &mut [u8],
     ) -> Result<bool, MpegError> {
         let csc_info = self.decode_and_csc(nal)?;
         let Some(_) = csc_info else { return Ok(false) };
@@ -500,7 +502,9 @@ impl AvcDecoder {
     ///
     /// Returns `Ok(true)` when a frame was produced.
     pub fn decode_csc_direct(
-        &mut self, nal: &AvcNal<'_>, dst: &mut [u8],
+        &mut self,
+        nal: &AvcNal<'_>,
+        dst: &mut [u8],
     ) -> Result<bool, MpegError> {
         if nal.data.is_empty() {
             return Ok(false);
@@ -529,7 +533,9 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
-        unsafe { crate::sys::sceKernelDcacheWritebackInvalidateAll(); }
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
 
         DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
         let ret = unsafe {
@@ -549,8 +555,11 @@ impl AvcDecoder {
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegAvcDecode(
-                mpeg, &mut self.au, self.frame_width as i32,
-                buf_arg, &mut self.pic_num,
+                mpeg,
+                &mut self.au,
+                self.frame_width as i32,
+                buf_arg,
+                &mut self.pic_num,
             )
         };
         if ret < 0 {
@@ -565,9 +574,7 @@ impl AvcDecoder {
         }
 
         let mut detail2: *mut c_void = core::ptr::null_mut();
-        let ret = unsafe {
-            crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2)
-        };
+        let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
         if ret < 0 || detail2.is_null() {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(if ret < 0 { ret } else { -1 }));
@@ -588,7 +595,8 @@ impl AvcDecoder {
         let csc = Mp4AvcCscStruct {
             height: ((info_h + 15) / 16) as i32,
             width: ((info_w + 15) / 16) as i32,
-            mode0: 0, mode1: 0,
+            mode0: 0,
+            mode1: 0,
             buffers: [
                 unsafe { *yuv_ptr.add(0) } as *const c_void,
                 unsafe { *yuv_ptr.add(1) } as *const c_void,
@@ -603,13 +611,16 @@ impl AvcDecoder {
 
         // Step 4: CSC writes directly to caller's buffer.
         DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
-        unsafe { crate::sys::sceKernelDcacheWritebackInvalidateAll(); }
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
 
-        let uncached_dst = (dst.as_mut_ptr() as usize
-            | 0x4000_0000) as *mut c_void;
+        let uncached_dst = (dst.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
-                uncached_dst, 0, csc_width,
+                uncached_dst,
+                0,
+                csc_width,
                 &csc as *const _ as *mut c_void,
             )
         };
@@ -629,9 +640,7 @@ impl AvcDecoder {
     /// Shared decode + CSC logic used by both `decode_into` and
     /// `decode_into_strided`. Returns the uncached pointer to the
     /// CSC output in `self.output_buf`, or `None` if no picture.
-    fn decode_and_csc(
-        &mut self, nal: &AvcNal<'_>,
-    ) -> Result<Option<CscResult>, MpegError> {
+    fn decode_and_csc(&mut self, nal: &AvcNal<'_>) -> Result<Option<CscResult>, MpegError> {
         if nal.data.is_empty() {
             return Ok(None);
         }
@@ -649,7 +658,9 @@ impl AvcDecoder {
             mode: if nal.is_first_frame { 3 } else { 0 },
         };
 
-        unsafe { crate::sys::sceKernelDcacheWritebackInvalidateAll(); }
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
 
         DECODE_STEP.store(1, core::sync::atomic::Ordering::Relaxed);
         let ret = unsafe {
@@ -669,8 +680,11 @@ impl AvcDecoder {
         let buf_arg = &mut output_ptr as *mut *mut c_void as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegAvcDecode(
-                mpeg, &mut self.au, self.frame_width as i32,
-                buf_arg, &mut self.pic_num,
+                mpeg,
+                &mut self.au,
+                self.frame_width as i32,
+                buf_arg,
+                &mut self.pic_num,
             )
         };
         if ret < 0 {
@@ -685,9 +699,7 @@ impl AvcDecoder {
         }
 
         let mut detail2: *mut c_void = core::ptr::null_mut();
-        let ret = unsafe {
-            crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2)
-        };
+        let ret = unsafe { crate::sys::sceMpegAvcDecodeDetail2(mpeg, &mut detail2) };
         if ret < 0 || detail2.is_null() {
             DECODE_STEP.store(0, core::sync::atomic::Ordering::Relaxed);
             return Err(MpegError(if ret < 0 { ret } else { -1 }));
@@ -708,7 +720,8 @@ impl AvcDecoder {
         let csc = Mp4AvcCscStruct {
             height: ((info_h + 15) / 16) as i32,
             width: ((info_w + 15) / 16) as i32,
-            mode0: 0, mode1: 0,
+            mode0: 0,
+            mode1: 0,
             buffers: [
                 unsafe { *yuv_ptr.add(0) } as *const c_void,
                 unsafe { *yuv_ptr.add(1) } as *const c_void,
@@ -722,13 +735,16 @@ impl AvcDecoder {
         };
 
         DECODE_STEP.store(4, core::sync::atomic::Ordering::Relaxed);
-        unsafe { crate::sys::sceKernelDcacheWritebackInvalidateAll(); }
+        unsafe {
+            crate::sys::sceKernelDcacheWritebackInvalidateAll();
+        }
 
-        let uncached_out = (self.output_buf.as_mut_ptr() as usize
-            | 0x4000_0000) as *mut c_void;
+        let uncached_out = (self.output_buf.as_mut_ptr() as usize | 0x4000_0000) as *mut c_void;
         let ret = unsafe {
             crate::sys::sceMpegBaseCscAvc(
-                uncached_out, 0, csc_width,
+                uncached_out,
+                0,
+                csc_width,
                 &csc as *const _ as *mut c_void,
             )
         };
@@ -737,7 +753,9 @@ impl AvcDecoder {
             return Err(MpegError(ret));
         }
 
-        Ok(Some(CscResult { uncached_ptr: uncached_out }))
+        Ok(Some(CscResult {
+            uncached_ptr: uncached_out,
+        }))
     }
 
     /// Video width in pixels.

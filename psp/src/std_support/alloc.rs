@@ -57,7 +57,11 @@ pub unsafe extern "C" fn __psp_realloc(
     if new_ptr.is_null() {
         return ptr::null_mut();
     }
-    let copy_size = if old_size < new_size { old_size } else { new_size } as usize;
+    let copy_size = if old_size < new_size {
+        old_size
+    } else {
+        new_size
+    } as usize;
     // Manual byte copy to avoid memcpy recursion on MIPS.
     let mut i = 0;
     while i < copy_size {
