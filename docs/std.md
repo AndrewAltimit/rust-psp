@@ -47,18 +47,32 @@ Output goes to **`target/mipsel-sony-psp-std/<profile>/EBOOT.PBP`**.
 
 ## Using `std` from your own project
 
-> [!WARNING]
-> `cargo-psp` finds the overlay by walking up from the current directory
-> until it sees a `rust-std-src/` folder. It does **not** look inside the git
-> checkout of the `psp` dependency. An out-of-tree project therefore fails
-> with `could not find repository root (looking for rust-std-src/ directory)`.
+Depend on `psp` with the `std` feature and run `cargo psp`; nothing else is
+needed:
 
-Workaround: copy `rust-std-src/` from the **same rust-psp revision** your
-`psp` dependency resolves to into your project root (or any parent
-directory), then run `cargo psp`. The overlay is written against one
-nightly's internal std APIs (see the comment in
-`rust-std-src/library/std/src/sys/fs/psp.rs`), so pin a matching nightly with
-`rust-toolchain.toml`. `nightly-2026-04-13` (the nightly CI pins) is verified.
+```toml
+[dependencies]
+psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["std"] }
+```
+
+`cargo-psp` looks for the overlay in this order:
+
+1. `RUST_PSP_STD_SRC`, if set (a path to a `rust-std-src/` directory).
+2. Next to the resolved `psp` package. A git or path dependency checks out
+   the whole rust-psp repository, so the overlay always matches the `psp`
+   revision you build against.
+3. Parent directories of the current one (building inside rust-psp, or a
+   project that vendors its own copy).
+
+The build log names the overlay it used (`[NOTE]: Using PSP std overlay at
+...`). The overlay is written against one nightly's internal std APIs (see
+the comment in `rust-std-src/library/std/src/sys/fs/psp.rs`), so pin a
+matching nightly with `rust-toolchain.toml`. `nightly-2026-04-13` (the
+nightly CI pins) is verified.
+
+Use a `cargo-psp` built from the same rust-psp revision as your `psp`
+dependency. Versions before this lookup existed only searched parent
+directories and fail with `could not find repository root`.
 
 ## What's supported
 

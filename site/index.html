@@ -547,7 +547,7 @@ fn psp_main() {
         </table>
       </div>
       <p class="note">Use <code>psp = { git = "…", features = ["std"] }</code>. <code>cargo psp</code> detects the feature; <code>RUST_PSP_BUILD_STD=1</code> forces a std build. Output goes to <code>target/mipsel-sony-psp-std/</code>.</p>
-      <p class="note"><strong>Outside this repository:</strong> <code>cargo psp</code> currently looks for the <code>rust-std-src/</code> overlay by walking up from your project directory, so copy it from the same rust-psp revision into your project root. See <a href="https://github.com/AndrewAltimit/rust-psp/blob/main/docs/std.md">docs/std.md</a>.</p>
+      <p class="note">The PSP overlay ships in the rust-psp repository, and <code>cargo psp</code> finds it next to your <code>psp</code> dependency, so it always matches the revision you build against. See <a href="https://github.com/AndrewAltimit/rust-psp/blob/main/docs/std.md">docs/std.md</a>.</p>
     </article>
   </div>
 </section>

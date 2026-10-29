@@ -125,7 +125,7 @@ list is in [docs/examples.md](docs/examples.md).
 Full index: [docs/README.md](docs/README.md).
 - [API overview](docs/api-overview.md): feature flags, every syscall domain, every high-level module
 - [Kernel mode](docs/kernel-mode.md): what the `kernel` feature unlocks, ME tasks, hooking, exceptions
-- [Standard library](docs/std.md): how the `std` overlay works, out-of-tree setup, support matrix
+- [Standard library](docs/std.md): how the `std` overlay works, using it from your project, support matrix
 - [Examples](docs/examples.md): all 30 examples and what they demonstrate
 - [Running & troubleshooting](docs/troubleshooting.md): PPSSPP, `Psp.toml`, psplink/gdb, common errors
 - [PRX section structure](docs/prx.md): ELF/PRX section layout
@@ -169,7 +169,6 @@ graphics implementations and the libraries PSPSDK is missing. Done: `core`,
 `alloc`, `panic = "unwind"`, the VFPU assembler, full 3D graphics, user-mode
 parity with PSPSDK, `libc` definitions, kernel mode, and experimental `std`.
 Open:
-- [ ] Find `rust-std-src` automatically for out-of-tree `std` projects
 - [ ] Automatically sign EBOOT.PBP files to run on unmodified PSPs
 
 ## License

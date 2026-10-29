@@ -9,7 +9,7 @@ start.
 |----------|-------------|
 | [api-overview.md](api-overview.md) | Feature flags, all syscall domains in `psp::sys` with counts, and every high-level module |
 | [examples.md](examples.md) | The 30 bundled examples and what each one demonstrates |
-| [std.md](std.md) | Experimental `std` support: how the overlay works, out-of-tree setup, support matrix |
+| [std.md](std.md) | Experimental `std` support: how the overlay works, using it from your project, support matrix |
 | [kernel-mode.md](kernel-mode.md) | Kernel-mode modules: what the `kernel` feature unlocks, Media Engine, syscall hooking, exception handlers |
 | [troubleshooting.md](troubleshooting.md) | Running on hardware or PPSSPP, debugging with psplink/gdb, common build errors |
 

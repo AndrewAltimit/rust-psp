@@ -49,7 +49,7 @@ Then follow part 6 of the
 |---------|-----|
 | Errors in `psp` such as `no sqrtf32 in intrinsics`, `cannot find truncf32`, or `no PanicPayload in panic` | Your nightly is newer than the SDK supports. Pin a known-good nightly in `rust-toolchain.toml` (see [Quick start](../README.md#1-toolchain)). |
 | `std` build errors inside `library/std` (e.g. `BorrowedCursor`, E0107) | The nightly doesn't match the `rust-std-src` overlay. Pin the matching nightly. |
-| `could not find repository root (looking for rust-std-src/ directory)` | See [Using `std` from your own project](std.md#using-std-from-your-own-project). |
+| `could not find repository root (looking for rust-std-src/ directory)` | Your `cargo-psp` predates the overlay lookup; reinstall it from the same rust-psp revision as `psp`. See [Using `std` from your own project](std.md#using-std-from-your-own-project). |
 | `failed to run prxgen` / `mksfo` / `pack-pbp` | The helper binaries aren't on `PATH`. Install all of them, not just `cargo-psp`. |
 | `cargo-psp requires a nightly rustc version` | Use nightly (`rust-toolchain.toml`, or `cargo +nightly psp`). |
 | `error[E0460]: found possibly newer version of crate ...` | Run `cargo clean`. |

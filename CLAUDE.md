@@ -112,7 +112,7 @@ Compile-time gates `module_kernel!()`, NAND flash (`sys/nand.rs`), IR remote (`s
 
 ### std Support (`--features std`)
 
-`rust-std-src/` is a PSP PAL overlay; cargo-psp merges it with the toolchain's `rust-src` into `target/psp-std-sysroot/`, patches out the `restricted_std` gate, and builds with a generated `target/mipsel-sony-psp-std.json` (output in `target/mipsel-sony-psp-std/`). The overlay tracks one nightly's internal std API -- nightly bumps usually require overlay changes. cargo-psp locates `rust-std-src/` by walking up from the cwd, so out-of-tree projects must copy it (known gap).
+`rust-std-src/` is a PSP PAL overlay; cargo-psp merges it with the toolchain's `rust-src` into `target/psp-std-sysroot/`, patches out the `restricted_std` gate, and builds with a generated `target/mipsel-sony-psp-std.json` (output in `target/mipsel-sony-psp-std/`). The overlay tracks one nightly's internal std API -- nightly bumps usually require overlay changes. cargo-psp locates `rust-std-src/` via `RUST_PSP_STD_SRC`, then next to the resolved `psp` package (works for git/path deps), then by walking up from the cwd (`find_std_overlay` in `cargo-psp/src/main.rs`).
 
 ### Distribution
 
