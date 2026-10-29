@@ -42,14 +42,14 @@ jobs:
         run: |
           for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
             if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+              docker run --rm -v "$(pwd):/workspace" busybox:1.38.0 sh -c \
                 "rm -rf /workspace/$item" 2>/dev/null || \
                 sudo rm -rf "$item" 2>/dev/null || true
             fi
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           clean: true
@@ -106,28 +106,14 @@ jobs:
 
       # ── PSP Emulator Test ───────────────────────────────────────
       - name: Run test EBOOT in PPSSPPHeadless
-        run: |
-          docker compose --profile psp run --rm ppsspp \
-            /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null || true
-
-          if [ -f psp_output_file.log ]; then
-            cat psp_output_file.log
-            if [ "$(tail -n 1 psp_output_file.log)" = "FINAL_SUCCESS" ]; then
-              echo "PSP tests passed"
-            else
-              echo "PSP tests failed"
-              exit 1
-            fi
-          else
-            echo "No output log -- headless exited without crash (TIMEOUT ok)"
-          fi
+        run: bash ci/psp-test.sh
 
       - name: Fix Docker file ownership
         if: always()
         run: |
           for dir in target outputs; do
             if [ -d "$dir" ]; then
-              docker run --rm -v "$(pwd)/$dir:/workspace" busybox:1.36.1 \
+              docker run --rm -v "$(pwd)/$dir:/workspace" busybox:1.38.0 \
                 chown -Rh "$(id -u):$(id -g)" /workspace 2>/dev/null || true
             fi
           done
@@ -148,14 +134,14 @@ jobs:
         run: |
           for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
             if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+              docker run --rm -v "$(pwd):/workspace" busybox:1.38.0 sh -c \
                 "rm -rf /workspace/$item" 2>/dev/null || \
                 sudo rm -rf "$item" 2>/dev/null || true
             fi
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           clean: true
@@ -220,7 +206,7 @@ jobs:
 
       - name: Upload review artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gemini-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: gemini-review.md
@@ -247,14 +233,14 @@ jobs:
         run: |
           for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
             if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+              docker run --rm -v "$(pwd):/workspace" busybox:1.38.0 sh -c \
                 "rm -rf /workspace/$item" 2>/dev/null || \
                 sudo rm -rf "$item" 2>/dev/null || true
             fi
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           clean: true
@@ -304,7 +290,7 @@ jobs:
 
       - name: Upload review artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codex-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: codex-review.md
@@ -334,14 +320,14 @@ jobs:
         run: |
           for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
             if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+              docker run --rm -v "$(pwd):/workspace" busybox:1.38.0 sh -c \
                 "rm -rf /workspace/$item" 2>/dev/null || \
                 sudo rm -rf "$item" 2>/dev/null || true
             fi
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           clean: false
@@ -371,7 +357,7 @@ jobs:
 
       - name: Download review artifacts
         if: steps.iteration.outputs.should_skip != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: '*-review-${{ github.run_id }}-${{ github.run_attempt }}'
@@ -422,14 +408,14 @@ jobs:
         run: |
           for item in outputs target/psp-std-sysroot psp_output_file.log .git/index.lock; do
             if [ -d "$item" ] || [ -f "$item" ]; then
-              docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+              docker run --rm -v "$(pwd):/workspace" busybox:1.38.0 sh -c \
                 "rm -rf /workspace/$item" 2>/dev/null || \
                 sudo rm -rf "$item" 2>/dev/null || true
             fi
           done
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           clean: false

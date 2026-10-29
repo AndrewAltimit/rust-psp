@@ -30,6 +30,8 @@ unimplemented = "warn"
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 
-# unicode-width workaround for mips target panic.
+# unicode-width workaround for mips target panic. Still required as of
+# unicode-width 0.2.3: its #[repr(align(128))] lookup tables produce a PRX
+# that fails to load ("Garbage libstub address" in PPSSPP).
 [patch.crates-io]
 unicode-width = { git = "https://git.sr.ht/~sajattack/unicode-width" }

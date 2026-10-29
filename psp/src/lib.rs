@@ -24,9 +24,10 @@
 #![cfg_attr(feature = "std", feature(restricted_std))]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-// Re-export paste macro so psp_extern! can reference it via $crate::paste!
+// Re-export pastey (maintained drop-in fork of paste) so psp_extern! can
+// reference it via $crate::paste!
 #[doc(hidden)]
-pub use paste::paste;
+pub use pastey::paste;
 #[cfg(not(feature = "stub-only"))]
 extern crate alloc;
 #[cfg(all(not(feature = "stub-only"), not(feature = "std")))]

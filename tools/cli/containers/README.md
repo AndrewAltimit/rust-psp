@@ -1,116 +1,52 @@
-# OpenCode Container Scripts
+# Agent Container Scripts
 
-This directory contains scripts for running OpenCode AI assistant in Docker containers.
+These scripts run AI coding agents inside Docker containers. They were copied
+from [template-repo](https://github.com/AndrewAltimit/template-repo), and only
+some of them work as-is in this repository.
 
-## Quick Start
+| Script | Status in this repo | What it does |
+|--------|---------------------|--------------|
+| `run_opencode_simple.sh` | Works | Builds a standalone `opencode-simple:latest` image (`node:20-slim` + `opencode-ai`) on first run and starts OpenCode. Needs only Docker. |
+| `run_gemini_container.sh` | Works | Runs the Gemini CLI in a container (building a small `node:20-slim` image if needed), reusing host Gemini authentication. |
+| `run_opencode_container.sh` | **Needs template-repo** | Runs OpenCode through an `openrouter-agents` compose service. That service and its `docker/openrouter-agents.Dockerfile` exist in template-repo, not here. |
+| `run_crush_container.sh` | **Needs template-repo** | Runs Crush through the same `openrouter-agents` service. |
 
-### Option 1: Simple Standalone Container (Recommended for beginners)
+To use the template-repo-backed scripts, run them from a template-repo
+checkout, or build the `template-repo-mcp-opencode`, `template-repo-mcp-crush`,
+and `template-repo-openrouter-agents` images there first. See
+[docs/maintainers.md](../../../docs/maintainers.md#docker-images) for how the
+MCP images relate to this repo.
 
-The simplest way to get started - no docker compose required:
+Host-side (non-container) launchers are in [`../agents/`](../agents/).
+
+## Environment variables
+
+- `OPENROUTER_API_KEY` is required by the OpenCode and Crush scripts. It is
+  read from the environment or a `.env` file in the current directory.
+  `run_opencode_simple.sh` prompts for it if it's missing.
+- `OPENCODE_MODEL` sets the OpenCode model (default
+  `qwen/qwen-2.5-coder-32b-instruct`).
+
+## Usage
 
 ```bash
-./run_opencode_simple.sh
-```
-
-This script:
-- Automatically builds a lightweight OpenCode container
-- Prompts for API key if not set
-- Works out of the box with minimal dependencies
-- Perfect for quick code generation tasks
-
-### Option 2: Full Infrastructure Container
-
-For users who need the complete MCP infrastructure:
-
-```bash
-./run_opencode_container.sh
-```
-
-This script:
-- Auto-builds all required MCP images if missing
-- Integrates with the full docker compose stack
-- Provides access to additional MCP tools
-- Suitable for advanced workflows
-
-## Features Comparison
-
-| Feature | Simple Container | Full Infrastructure |
-|---------|-----------------|-------------------|
-| Setup Time | ~1 minute | ~5 minutes |
-| Dependencies | Docker only | Docker + docker compose |
-| Image Size | ~300MB | ~2GB |
-| MCP Tools | No | Yes |
-| Auto-build | Yes | Yes |
-| Interactive Mode | Yes | Yes |
-| Single Query Mode | Yes | Yes |
-
-## Environment Variables
-
-Both scripts support:
-- `OPENROUTER_API_KEY` - Your OpenRouter API key (required)
-- `OPENCODE_MODEL` - Model to use (default: qwen/qwen-2.5-coder-32b-instruct)
-
-## Usage Examples
-
-### Interactive Mode
-```bash
-# Simple
+# Interactive
 ./run_opencode_simple.sh
 
-# Full
-./run_opencode_container.sh
-```
+# Single query
+./run_opencode_simple.sh -q "Explain psp/src/alloc_impl.rs"
 
-### Single Query Mode
-```bash
-# Simple
-./run_opencode_simple.sh -q "Write a Python fibonacci function"
-
-# Full
-./run_opencode_container.sh -q "Write a Python fibonacci function"
-```
-
-### With Context File
-```bash
-# Full infrastructure only
+# Full-infrastructure variant (template-repo images required)
 ./run_opencode_container.sh -q "Refactor this code" -c existing_code.py
 ```
 
+Each script prints its full option list with `-h`.
+
 ## Troubleshooting
 
-### Images Not Building
-
-If the full infrastructure fails to build:
-1. Ensure docker compose is installed
-2. Check Docker daemon is running
-3. The script now auto-builds missing images
-4. If issues persist, build manually:
-   ```bash
-   # Build base images
-   docker compose build mcp-opencode mcp-crush
-
-   # Build agents image (uses docker build to avoid Docker Hub lookups)
-   docker build -f docker/openrouter-agents.Dockerfile \
-     --build-arg OPENCODE_IMAGE=template-repo-mcp-opencode:latest \
-     --build-arg CRUSH_IMAGE=template-repo-mcp-crush:latest \
-     -t template-repo-openrouter-agents:latest .
-   ```
-
-### API Key Issues
-
-If you get API key errors:
-1. Get a key from https://openrouter.ai/keys
-2. Export it: `export OPENROUTER_API_KEY='your-key-here'`
-3. Or add to `.env` file in project root
-
-### Permission Errors
-
-If you get permission errors:
-1. Ensure scripts are executable: `chmod +x *.sh`
-2. Check Docker permissions: `docker ps`
-
-## Company Integration
-
-For the company-specific OpenCode integration with proxy support, see:
-- `/automation/corporate-proxy/` - Corporate proxy integrations for Crush and OpenCode
-- `/OPENCODE_COMPANY_INTEGRATION.md` - Full documentation
+- **API key errors:** get a key at https://openrouter.ai/keys, then run
+  `export OPENROUTER_API_KEY=...` or add it to `.env`.
+- **Permission errors:** make the scripts executable (`chmod +x *.sh`) and
+  check that your user can reach the Docker daemon (`docker ps`).
+- **`openrouter-agents` service not found:** see the table above. This repo
+  doesn't define that service.
