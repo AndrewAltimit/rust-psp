@@ -267,16 +267,9 @@ fn prepare_psp_sysroot() -> Result<()> {
         );
     }
 
-    // Locate our PSP overlay source.
-    // Walk up from the current dir to find the repo root containing rust-std-src/.
-    let overlay_src = find_repo_root()?.join("rust-std-src");
-    if !overlay_src.join("library").exists() {
-        bail!(
-            "PSP std overlay not found at {}.\n\
-             Expected rust-std-src/library/ in the repository root.",
-            overlay_src.display()
-        );
-    }
+    // Locate our PSP overlay source (rust-std-src/).
+    let overlay_src = find_std_overlay()?;
+    eprintln!("[NOTE]: Using PSP std overlay at {}", overlay_src.display());
 
     let dest = env::current_dir()
         .context("failed to get current dir")?
@@ -383,21 +376,69 @@ fn patch_std_stability(lib_rs: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Find the repository root by walking up from the current directory,
-/// looking for a directory containing `rust-std-src/`.
-fn find_repo_root() -> Result<std::path::PathBuf> {
-    let mut dir = env::current_dir().context("failed to get current dir")?;
-    loop {
-        if dir.join("rust-std-src").exists() {
-            return Ok(dir);
-        }
-        if !dir.pop() {
+/// Locate the PSP std overlay (`rust-std-src/`), in order of preference:
+///
+/// 1. `RUST_PSP_STD_SRC`, if set.
+/// 2. Next to the resolved `psp` package. A git or path dependency on
+///    rust-psp checks out the whole repository, so the overlay sits beside
+///    `psp/` and always matches the `psp` revision being built.
+/// 3. Walking up from the current directory (building inside rust-psp, or a
+///    project that vendors its own copy).
+fn find_std_overlay() -> Result<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+
+    fn overlay_in(dir: &Path) -> Option<PathBuf> {
+        let overlay = dir.join("rust-std-src");
+        overlay.join("library/std").exists().then_some(overlay)
+    }
+
+    if let Some(dir) = env::var_os("RUST_PSP_STD_SRC") {
+        let dir = PathBuf::from(dir);
+        if !dir.join("library/std").exists() {
             bail!(
-                "could not find repository root (looking for rust-std-src/ directory).\n\
-                 Make sure you're building from within the rust-psp repository."
+                "RUST_PSP_STD_SRC={} does not contain library/std",
+                dir.display()
             );
         }
+        return Ok(dir);
     }
+
+    if let Some(dir) = psp_package_dir().and_then(|d| d.ancestors().find_map(overlay_in)) {
+        return Ok(dir);
+    }
+
+    let cwd = env::current_dir().context("failed to get current dir")?;
+    if let Some(dir) = cwd.ancestors().find_map(overlay_in) {
+        return Ok(dir);
+    }
+
+    bail!(
+        "could not find the PSP std overlay (rust-std-src/).\n\
+         It is looked up next to the `psp` dependency's source, then in parent\n\
+         directories of the current one. Depend on psp via git or path from\n\
+         https://github.com/AndrewAltimit/rust-psp, or set RUST_PSP_STD_SRC."
+    )
+}
+
+/// Directory containing the resolved `psp` package's Cargo.toml, if any.
+fn psp_package_dir() -> Option<std::path::PathBuf> {
+    let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        .arg("metadata")
+        .arg("--format-version=1")
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let metadata = MetadataCommand::parse(std::str::from_utf8(&output.stdout).ok()?).ok()?;
+    metadata
+        .packages
+        .iter()
+        .find(|p| p.name.as_str() == "psp")
+        .and_then(|p| p.manifest_path.parent())
+        .map(|dir| dir.as_std_path().to_path_buf())
 }
 
 /// Recursively copy a directory. If files exist at the destination, they are
