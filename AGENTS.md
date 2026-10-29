@@ -15,6 +15,7 @@ All development is AI-agent-driven under human direction. No external contributi
 rustup default nightly
 rustup component add rust-src
 ```
+CI pins a specific nightly (`NIGHTLY_DATE` in `docker/rust-ci.Dockerfile`) because the `psp` crate and the `rust-std-src/` overlay depend on nightly internals; use the same date locally (`rustup toolchain install nightly-<date> --component rust-src`) if floating nightly fails to build.
 
 ### Building cargo-psp (host tools)
 ```bash
@@ -50,10 +51,11 @@ cargo clippy --manifest-path cargo-psp/Cargo.toml --all-targets -- -D warnings
 # cargo-psp unit tests (host)
 cargo test --manifest-path cargo-psp/Cargo.toml
 
-# PSP integration tests (requires Docker)
-docker compose --profile ci run --rm rust-ci cargo +nightly psp --release  # in ci/tests
-docker compose --profile psp run --rm ppsspp /roms/debug/test_cases.EBOOT.PBP --timeout=10
-# Success: "FINAL_SUCCESS" appears in psp_output_file.log
+# PSP integration tests (requires Docker) -- or just: ./ci/run-ci.sh full
+docker compose --profile ci run --rm rust-ci cargo build --manifest-path cargo-psp/Cargo.toml --release
+docker compose --profile ci run --rm -w /app/ci/tests rust-ci \
+  bash -c 'export PATH="/app/cargo-psp/target/release:$PATH" && cargo +nightly psp'   # debug build
+bash ci/psp-test.sh   # runs test_cases.EBOOT.PBP in PPSSPPHeadless; fails unless the log ends in FINAL_SUCCESS
 ```
 
 ### License/Advisory checks
@@ -70,19 +72,21 @@ cargo deny --manifest-path cargo-psp/Cargo.toml check
 - **Root workspace** (`Cargo.toml`): Contains `psp` crate, `examples/*`, `ci/tests`, `ci/std_verification`. All build for `mipsel-sony-psp` target.
 - **cargo-psp workspace** (`cargo-psp/Cargo.toml`): Build tools that run on the host. Excluded from root workspace because it targets the host architecture, not PSP.
 
-Never add cargo-psp as a workspace member to the root `Cargo.toml`. Never run `cargo install cargo-psp` (that installs the upstream version from crates.io).
+Never add cargo-psp as a workspace member to the root `Cargo.toml`. Never run `cargo install cargo-psp` without `--git` (that installs the upstream version from crates.io).
 
 ### PSP Crate (`psp/`)
 
-The core SDK. A `#![no_std]` crate providing:
+The core SDK. `#![no_std]` unless the `std` feature is enabled. Provides:
 
-- **`src/lib.rs`**: Entry point macros `module!()` and `module_kernel!()`. These generate `module_start`/`module_stop` functions and `.rodata.sceModuleInfo` sections.
-- **`src/sys/`**: All PSP OS syscall bindings (~15K lines). Wrapped via the `psp_extern!` macro which generates MIPS syscall stubs. Major modules: `gu.rs` (graphics, 107KB), `net.rs` (networking), `kernel/` (privileged APIs).
-- **`src/vfpu.rs`**: VFPU (Vector FPU) inline assembly macros (169KB). MIPS-specific.
+- **`src/lib.rs`**: Entry point macros `module!()` and `module_kernel!()` (the latter only with `feature = "kernel"`). They generate `module_start` (no `module_stop`), the `.rodata.sceModuleInfo` struct, and the `.lib.ent`/`.rodata.sceResident` export table.
+- **`src/sys/`**: Low-level PSP OS bindings (~19K lines). 837 firmware imports declared via `psp_extern!` (812 always available + 25 behind `kernel`), which generates import stubs with NIDs. `gu.rs`/`gum.rs` (~105KB) are a native Rust GE command-list implementation, not syscalls. Other large files: `net.rs`, `kernel/thread.rs`. `sys/gpio.rs`, `sys/syscon.rs`, `sys/sysreg.rs` are kernel driver tables resolved at runtime via `psp::hook::find_function`, not `psp_extern!`.
+- **High-level modules** (`src/*.rs`): 41 safe wrappers over `sys` (34 always on, `embedded_graphics` behind its feature, `me`/`hw`/`hook`/`gpio`/`syscon`/`sysreg` behind `kernel`). Most are disabled by the `stub-only` feature.
+- **`src/vfpu.rs`**: `vfpu_asm!` VFPU (Vector FPU) inline assembler macros (~169KB). MIPS-specific.
 - **`src/vram_alloc.rs`**: VRAM allocator returning `Result<VramMemChunk, VramAllocError>` (no panics).
 - **`src/debug.rs`**: Thread-safe debug printing via `SpinMutex`.
 - **`src/panic.rs`**: Panic handler with unwinding support. Uses `AtomicUsize` for panic counting.
-- **`src/alloc_impl.rs`**: Global allocator using PSP kernel memory partitions.
+- **`src/alloc_impl.rs`**: Global allocator: one large partition block (8 MB user, smaller with `kernel`) managed by `linked_list_allocator`; large allocations bypass to `sceKernelAllocPartitionMemory`. Also the manual `memcpy`/`memset`/`memmove`.
+- **`src/std_support/`**: `extern "C"` `__psp_*` bridge functions called by the std PAL overlay in `rust-std-src/` (only with `feature = "std"`).
 - **`src/test_runner.rs`**: Test harness that outputs to file and prints "FINAL_SUCCESS".
 
 ### cargo-psp (`cargo-psp/`)
@@ -99,14 +103,22 @@ Host-side build toolchain:
 
 PSP executables require specific ELF sections:
 - `.rodata.sceModuleInfo` - Module metadata (flags: `0x0000` user-mode, `0x1000` kernel-mode)
-- `.lib.ent.top/.bottom` - Export table boundaries
-- `.lib.stub.top/.bottom` - Import stub boundaries
+- `.lib.ent.top/.btm` - Export table boundaries
+- `.lib.stub.top/.btm` - Import stub boundaries
 
-The `psp_extern!` macro generates syscall stubs with NIDs (numeric IDs) that the PSP OS resolves at load time.
+The `psp_extern!` macro generates syscall stubs with NIDs (numeric IDs) that the PSP OS resolves at load time. See `docs/prx.md` for the full section layout.
 
 ### Kernel Mode (`--features kernel`)
 
-Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX module loading, volatile memory access, NAND flash, IR remote (SIRCS), hardware video codecs, ME coprocessor control, hardware register I/O, exception handling, and CFW syscall hooking. Uses `module_kernel!()` macro. Key modules: `me.rs` (Media Engine boot/task), `hw.rs` (register I/O), `hook.rs` (syscall hooking), `sys/nand.rs`, `sys/sircs.rs`, `sys/codec.rs`, `sys/sctrl.rs`.
+Compile-time gates `module_kernel!()`, NAND flash (`sys/nand.rs`), IR remote (`sys/sircs.rs`), CFW `sctrlHEN*` (`sys/sctrl.rs`), USB bus driver (`sys/usbbd.rs`), exception handler registration (`sys/kernel/mod.rs`), and the high-level `me.rs` (Media Engine boot/`MeExecutor`), `hw.rs` (MMIO), `hook.rs` (syscall hooking, `find_function`), `gpio.rs`, `syscon.rs`, `sysreg.rs`. Kernel partitions, ME clock, interrupt registration, and module loading are ungated bindings that only succeed from a kernel module. `sys/codec.rs` is NOT kernel-gated. Guide: `docs/kernel-mode.md`.
+
+### std Support (`--features std`)
+
+`rust-std-src/` is a PSP PAL overlay; cargo-psp merges it with the toolchain's `rust-src` into `target/psp-std-sysroot/`, patches out the `restricted_std` gate, and builds with a generated `target/mipsel-sony-psp-std.json` (output in `target/mipsel-sony-psp-std/`). The overlay tracks one nightly's internal std API -- nightly bumps usually require overlay changes. cargo-psp locates `rust-std-src/` by walking up from the cwd, so out-of-tree projects must copy it (known gap).
+
+### Distribution
+
+Not published on crates.io (the `psp`/`cargo-psp` names there are upstream's). Users depend on `psp = { git = "https://github.com/AndrewAltimit/rust-psp" }` and install tools via `cargo install --git https://github.com/AndrewAltimit/rust-psp cargo-psp --locked` or GitHub Releases. Never write instructions that point at crates.io.
 
 ## Key Conventions
 
@@ -126,11 +138,12 @@ Enables privileged PSP APIs: kernel memory partitions, interrupt handlers, PRX m
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push to main | fmt, clippy, test, build, cargo-deny, PSP emulator test |
-| `main-ci.yml` | Push to main + `v*` tags | Full CI plus release binary creation |
+| `main-ci.yml` | Push to main + `v*` tags + manual | Full CI, release binaries + GitHub Release (tags/manual), GitHub Pages deploy of `site/` (main) |
 | `pr-validation.yml` | Pull requests | Full CI + Gemini AI review + agent auto-fix (Codex disabled) |
 
-CI runs in Docker containers (`docker/rust-ci.Dockerfile` based on `rust:1.93-slim`). PSP tests run in PPSSPPHeadless emulator container.
+`ci/run-ci.sh <stage|full>` runs the same stages locally. Full details: `docs/maintainers.md`.
+
+CI runs in Docker containers (`docker/rust-ci.Dockerfile` based on `rust:1.99-slim`, with nightly pinned via `NIGHTLY_DATE`). PSP tests run in a PPSSPPHeadless container (`ci/Dockerfile-ppsspp`, pinned to PPSSPP `v1.20.4` via `PPSSPP_REF`) through `ci/psp-test.sh`.
 
 ### CI Stage Order
 
@@ -139,7 +152,7 @@ All stages run inside the `rust-ci` Docker container (`docker compose --profile 
 1. **Format check** -- `cargo fmt --check` (stable for cargo-psp, nightly for psp workspace)
 2. **Clippy** -- `cargo clippy -D warnings` (cargo-psp, host target)
 3. **Unit tests** -- `cargo test` (cargo-psp)
-4. **Build** -- release build of cargo-psp + CI test EBOOT
+4. **Build** -- release build of cargo-psp, then `cargo psp` for `examples/kernel-mode` (kernel feature check) and `ci/tests` (test EBOOT)
 5. **cargo-deny** -- license and advisory checks for both workspaces
 6. **PSP emulator test** -- run test EBOOT in PPSSPPHeadless (Docker)
 
@@ -191,7 +204,7 @@ Scripts in `tools/cli/agents/` launch each agent:
 
 | Script | Agent | Notes |
 |--------|-------|-------|
-| `run_claude.sh` | Claude Code | Requires NVM + Node.js 22.16.0 |
+| `run_claude.sh` / `run_claude.bat` | Claude Code | Requires NVM + Node.js 22.16.0 (`stop_claude.sh` to stop) |
 | `run_gemini.sh` | Gemini CLI | Requires `@google/gemini-cli` |
 | `run_opencode.sh` | OpenCode | Requires OpenRouter API key |
 | `run_crush.sh` | Crush | Requires OpenRouter API key |
@@ -207,7 +220,7 @@ Container-based MCP services available via `docker compose --profile services`:
 | `mcp-gemini` | Gemini AI consultation |
 | `mcp-opencode` | OpenCode AI (Qwen model via OpenRouter) |
 | `mcp-crush` | Crush AI (via OpenRouter) |
-| `mcp-codex` | ~~Codex AI consultation~~ **DISABLED** (security policy) |
+| `mcp-codex` | ~~Codex AI consultation~~ **DISABLED** (security policy; moved to the `disabled-codex` profile) |
 | `mcp-github-board` | GitHub Projects board management |
 | `mcp-agentcore-memory` | Agent memory (ChromaDB backend) |
 | `mcp-reaction-search` | Reaction image search |
@@ -220,4 +233,5 @@ MCP images are pre-built from template-repo. Build them there first: `docker com
 - **The two workspaces have different toolchain requirements.** cargo-psp builds with stable Rust; the psp workspace requires nightly with `rust-src`.
 - **Graphics code behaves differently on PPSSPP vs real hardware.** PPSSPP is more permissive. Test on real PSP hardware when possible for graphics-related changes.
 - **`cargo deny check` requires separate runs for each workspace** since they have independent Cargo.lock files.
-- **The `ci/tests` crate uses edition 2018** (not 2024 like the rest of the workspace). This is intentional.
+- **The `ci/tests` and `ci/std_verification` crates use edition 2018** (not 2024 like the rest of the workspace). This is intentional.
+- **Nightly drift breaks the build.** Newer nightlies remove compiler internals the `psp` crate uses (e.g. `core::intrinsics::sqrtf32`/`truncf32`, `core::panic::PanicPayload`) and change std internals the `rust-std-src/` overlay depends on. When bumping nightly, build both a no_std example and `examples/rust-std-hello-world`.

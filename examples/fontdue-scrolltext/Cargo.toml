@@ -8,4 +8,4 @@ license = "MIT"
 
 [dependencies]
 psp = { path = "../../psp" }
-fontdue = "0.6.2"
+fontdue = "0.9"

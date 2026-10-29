@@ -2,7 +2,7 @@
 # Rust CI image for rust-psp
 # Nightly toolchain with rust-src for mipsel-sony-psp cross-compilation
 
-FROM rust:1.93-slim
+FROM rust:1.99-slim
 
 # System dependencies (minimal -- no X11/audio/video needed for PSP SDK)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -12,19 +12,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install nightly toolchain with rust-src (required for -Zbuild-std on mips)
-# The RUN string includes a date so a nightly-API bump forces cache
-# invalidation. `rustup update nightly` on top of `install` makes
-# sure rebuilds pick up the latest toolchain even when a prior
-# layer had nightly cached. 2026-04-11 reshaped BorrowedCursor
-# (`ensure_init -> &mut [u8]`, `advance_checked`); the std overlay
-# matches that shape.
-ARG NIGHTLY_REFRESH=2026-04-13
-RUN echo "nightly refresh ${NIGHTLY_REFRESH}" \
-    && rustup install nightly \
-    && rustup update nightly \
-    && rustup component add rustfmt clippy \
-    && rustup component add --toolchain nightly rustfmt rust-src
+# Install a PINNED nightly with rust-src (required for -Zbuild-std on mips).
+# The std overlay in rust-std-src/ patches nightly's library sources and
+# must match their internal APIs (2026-04-11 reshaped BorrowedCursor:
+# `ensure_init -> &mut [u8]`, `advance_checked`). Unpinned nightlies drift
+# and break every PSP build (cargo-psp builds std whenever any workspace
+# member enables `psp/std`). Bump NIGHTLY_DATE only together with an
+# overlay re-sync.
+#
+# The dated toolchain is symlinked as plain `nightly` so the existing
+# `cargo +nightly ...` commands (CI, docs, pre-commit) use it unchanged.
+ARG NIGHTLY_DATE=2026-04-13
+RUN rustup component add rustfmt clippy \
+    && rustup toolchain install "nightly-${NIGHTLY_DATE}" --profile minimal \
+        --component rust-src,rustfmt,clippy \
+    && host="$(rustc -vV | sed -n 's/^host: //p')" \
+    && rm -rf "${RUSTUP_HOME}/toolchains/nightly-${host}" \
+    && ln -s "${RUSTUP_HOME}/toolchains/nightly-${NIGHTLY_DATE}-${host}" \
+        "${RUSTUP_HOME}/toolchains/nightly-${host}" \
+    && rustc +nightly -vV
 
 # Install cargo-deny for license/advisory checks
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

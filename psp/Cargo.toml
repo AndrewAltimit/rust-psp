@@ -24,13 +24,13 @@ embedded-graphics = ["dep:embedded-graphics-core"]
 kernel = []
 
 [dependencies]
-paste = "1.0"
-bitflags = "2.6"
-libm = "0.2"
+pastey = "0.2"
+bitflags = "2.13"
+libm = "0.2.16"
 embedded-graphics-core = { version = "0.4", optional = true }
 unstringify = "0.1"
-linked_list_allocator = { version = "0.10", default-features = false }
-spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
+linked_list_allocator = { version = "0.10.6", default-features = false }
+spin = { version = "0.12", default-features = false, features = ["mutex", "spin_mutex"] }
 
 [dependencies.num_enum]
 version = "0.7"

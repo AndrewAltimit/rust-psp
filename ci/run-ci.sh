@@ -96,36 +96,10 @@ stage_deny() {
 stage_psp_test() {
     run_stage "psp-test"
 
-    local eboot="target/mipsel-sony-psp/debug/test_cases.EBOOT.PBP"
-    if [ ! -f "$eboot" ]; then
-        echo "EBOOT not found -- run 'build' stage first"
-        fail "psp-test"
-    fi
-
-    # Use the PPSSPP docker service or fall back to template-repo image
-    if docker compose --profile psp run --rm ppsspp \
-        /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null; then
-        :
-    elif docker run --rm \
-        -v "$REPO_ROOT/target/mipsel-sony-psp:/roms:ro" \
-        -e PPSSPP_HEADLESS=1 \
-        template-repo-ppsspp:latest \
-        /roms/debug/test_cases.EBOOT.PBP --timeout=10 2>/dev/null; then
-        :
-    else
-        echo "PPSSPPHeadless exited (TIMEOUT expected)"
-    fi
-
-    if [ -f psp_output_file.log ]; then
-        cat psp_output_file.log
-        if [ "$(tail -n 1 psp_output_file.log)" = "FINAL_SUCCESS" ]; then
-            pass "psp-test"
-        else
-            fail "psp-test"
-        fi
-    else
-        echo "No output log -- headless exited without crash (TIMEOUT ok)"
+    if bash "$REPO_ROOT/ci/psp-test.sh"; then
         pass "psp-test"
+    else
+        fail "psp-test"
     fi
 }
 

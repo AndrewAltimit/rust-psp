@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1.4
 # PPSSPP Headless for CI testing of PSP EBOOTs
 
-FROM ubuntu:latest AS ppsspp
+# Pinned for reproducibility: PPSSPP master moved to SDL3 (2026), which
+# breaks unpinned builds. Bump both together.
+FROM ubuntu:26.04 AS ppsspp
+
+ARG PPSSPP_REF=v1.20.4
 
 ENV DEBIAN_FRONTEND="noninteractive"
 
@@ -11,7 +15,8 @@ RUN apt-get -y update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth=1 --recurse-submodules --shallow-submodules \
+RUN git clone --depth=1 --branch "${PPSSPP_REF}" \
+    --recurse-submodules --shallow-submodules \
     https://github.com/hrydgard/ppsspp /ppsspp
 
 WORKDIR /ppsspp/build-sdl
@@ -22,5 +27,8 @@ RUN cmake .. \
     -DUSE_SYSTEM_LIBZIP=ON \
     && make -j"$(nproc)" \
     && make install
+
+# Release tags' `make install` only installs PPSSPPSDL.
+RUN install -m 0755 /ppsspp/build-sdl/PPSSPPHeadless /usr/local/bin/PPSSPPHeadless
 
 ENTRYPOINT ["PPSSPPHeadless"]

@@ -1,369 +1,18 @@
 # rust-psp
 
-> Rust SDK for Sony PSP homebrew development -- modernized fork with edition 2024, safety fixes, and kernel mode support.
-
-**Forked from:** [github.com/overdrivenpotato/rust-psp](https://github.com/overdrivenpotato/rust-psp) (MIT license)
-
-The upstream project is maintained at a low cadence (3-5 commits/year, mostly nightly breakage fixes) and has 33 open issues including known soundness bugs. This fork diverges for edition 2024 compatibility, comprehensive safety hardening, and feature additions while tracking upstream for bug fixes.
-
-```rust
-#![no_std]
-#![no_main]
-
-psp::module!("sample_module", 1, 1);
-
-fn psp_main() {
-    psp::callback::setup_exit_callback().unwrap();
-    psp::dprintln!("Hello PSP from rust!");
-}
-```
-
-## API Overview
-
-The `psp` crate provides ~829 syscall bindings covering every major PSP subsystem, plus high-level Rust utilities.
-
-### Syscall Bindings (`psp::sys`)
-
-| Domain | Module(s) | Functions | Description |
-|--------|-----------|-----------|-------------|
-| Graphics | `gu`, `ge`, `display` | ~150 | GU/GUM 3D rendering, GPU command queue, display mode/vsync |
-| Input | `ctrl` | 12 | Buttons, D-pad, analog stick |
-| Audio | `audio` | 26 | PCM output/input, channel management, SRC channel, volume |
-| Audio Codec | `audiocodec` | 5 | Hardware audio codec (MP3, AAC, ATRAC3, ATRAC3plus) EDRAM decode |
-| ATRAC3 | `atrac` | 23 | Sony ATRAC3/ATRAC3plus codec |
-| MP3 | `mp3` | 17 | MP3 decoder |
-| MPEG | `mpeg`, `psmf` | 79 | MPEG video, PSMF stream decoding |
-| JPEG | `jpeg` | 5 | JPEG image decoding |
-| File I/O | `io` | 36 | Open/read/write/close, directories, async I/O |
-| Networking | `net` | 150 | Sockets, TCP/UDP, DNS, HTTP, DHCP |
-| WLAN | `wlan` | 5 | Wireless LAN module control |
-| USB | `usb` | 45 | USB device, storage, camera |
-| Power | `power` | 31 | Battery, clock frequency, power callbacks |
-| RTC | `rtc` | 36 | Real-time clock, time conversion |
-| Font | `font` | 28 | Font loading, glyph rendering, metrics |
-| Registry | `registry` | 16 | PSP system registry access |
-| UMD | `umd` | 14 | UMD disc drive control |
-| Utility | `utility` | 43 | Save data, message dialog, OSK, browser |
-| Kernel/Threading | `kernel` | 188 | Threads, semaphores, mutexes, events, callbacks, memory |
-| GE | `ge` | 18 | Graphics Engine low-level command queue |
-| HPRM | `hprm` | 6 | Headphone remote accessory |
-| OpenPSID | `openpsid` | 1 | Console unique ID |
-| **Kernel-only** | `nand` | 12 | NAND flash read/write/status |
-| **Kernel-only** | `sircs` | 1 | Infrared remote control (SIRCS protocol) |
-| **Kernel-only** | `codec` | 5 | Hardware video codec control (`sceVideocodec*`) |
-| **Kernel-only** | `sctrl` | 2 | SystemCtrlForKernel CFW syscall hooking (`sctrlHEN*`) |
-
-### Platform SDK
-
-38+ high-level modules providing safe, idiomatic Rust APIs with RAII resource management over PSP syscalls.
-
-#### System & Lifecycle
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::callback` | `setup_exit_callback()` | Register exit callback (spawns handler thread) |
-| `psp::power` | `get_clock()`, `set_clock()`, `battery_info()` | CPU/bus clock control, battery status, AC detection |
-| `psp::display` | `wait_vblank()`, `set_framebuf()` | VBlank sync, framebuffer management |
-| `psp::time` | `Instant`, `Duration`, `FrameTimer` | Microsecond timing, frame rate measurement |
-| `psp::timer` | `Alarm`, `VTimer` | One-shot alarms (closure-based), virtual timers |
-| `psp::dialog` | `message_dialog()`, `confirm_dialog()` | System message/confirmation/error dialogs |
-| `psp::system_param` | `language()`, `nickname()`, `timezone_offset()` | System parameter queries (language, date/time format, etc.) |
-| `psp::rtc` | `Tick`, `format_rfc3339()`, `day_of_week()` | Extended RTC: tick arithmetic, RFC 3339, UTC/local conversion |
-
-#### Threading & Sync
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::thread` | `spawn()`, `JoinHandle`, `sleep_ms()` | Thread creation with closure trampolines, join/sleep |
-| `psp::sync` | `SpinMutex`, `SpinRwLock`, `Semaphore`, `EventFlag` | Spinlocks, kernel semaphores, event flags, SPSC queue |
-
-#### Input
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::input` | `Controller`, `analog_x_f32()`, `is_pressed()` | Button press/release detection, analog deadzone normalization |
-| `psp::osk` | `text_input()`, `OskBuilder` | On-screen keyboard for user text input (UTF-16 handling) |
-
-#### File I/O & Config
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::io` | `File`, `ReadDir`, `read_to_vec()`, `write_bytes()` | RAII file handles, directory iteration, convenience I/O |
-| `psp::config` | `Config`, `save()`, `load()` | Key-value store with binary RCFG format (bool/i32/f32/str) |
-| `psp::savedata` | `Savedata`, `save()`, `load()` | PSP system save/load dialog with auto-save/auto-load modes |
-
-#### Audio
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::audio` | `AudioChannel`, `SrcChannel`, `output_blocking()` | RAII audio channels (PCM + sample rate conversion) |
-| `psp::audio_mixer` | `Mixer`, `Channel` | Multi-channel PCM software mixer |
-| `psp::audiocodec` | `AudiocodecDecoder`, `CodecType` | Hardware codec decoder for MP3/AAC/ATRAC3/ATRAC3plus (RAII EDRAM) |
-| `psp::mp3` | `Mp3Decoder`, `decode_frame()`, `find_sync()` | Hardware MP3 decode, frame sync, ID3v2 tag parsing |
-
-#### Graphics & Rendering
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::framebuffer` | `DoubleBuffer`, `LayerCompositor` | Double-buffered framebuffer, dirty-rect tracking |
-| `psp::gu_ext` | `setup_2d()`, `SpriteBatch`, `GuStateSnapshot` | 2D rendering helpers, sprite batching, GU state save/restore |
-| `psp::simd` | `Vec4`, `Mat4` | VFPU-accelerated vector/matrix math, easing, color ops |
-| `psp::image` | `decode_jpeg()`, `decode_bmp()`, `load_image()` | Hardware JPEG decode, BMP 24/32-bit decode, auto-detect |
-| `psp::font` | `FontLib`, `Font`, `FontRenderer` | System PGF font loading, VRAM glyph atlas rendering |
-
-#### Networking
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::net` | `TcpStream`, `UdpSocket`, `connect_ap()` | WiFi connect, TCP/UDP sockets (RAII), DNS resolution |
-| `psp::http` | `HttpClient`, `get()`, `post()`, `RequestBuilder` | HTTP client with RAII template/connection/request lifecycle |
-| `psp::wlan` | `status()`, `is_available()` | WLAN module status query |
-
-#### Hardware & Memory
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::dma` | `memcpy_dma()`, `vram_blit_dma()` | DMA memory copy and VRAM blitting |
-| `psp::cache` | `CachedPtr`, `UncachedPtr` | Cache-aware pointers, dcache flush/invalidate helpers |
-| `psp::mem` | `Partition2Alloc`, `Partition3Alloc` | Typed partition memory allocators |
-| `psp::usb` | `UsbStorageMode`, `is_connected()` | USB bus control, mass storage mode (RAII) |
-
-#### Kernel-Only (requires `--features kernel`)
-
-| Module | Key API | Description |
-|--------|---------|-------------|
-| `psp::me` | `MeExecutor`, `me_boot()` | Media Engine coprocessor boot/task management |
-| `psp::hw` | `hw_read32()`, `hw_write32()`, `Register<T>` | Memory-mapped hardware register I/O |
-| `psp::hook` | `SyscallHook`, `find_function()` | Kernel syscall hooking with inline fallback (CFW plugins) |
-
-#### Standalone Utilities
-
-| Module | Description |
-|--------|-------------|
-| `psp::vram_alloc` | VRAM bump allocator with `Result` error handling |
-| `psp::embedded_graphics` | `DrawTarget` impl for the `embedded-graphics` crate |
-| `psp::screenshot_bmp()` | Capture framebuffer to BMP |
-| `psp::benchmark()` | Cycle-accurate benchmarking via RTC |
-| `psp::math` | VFPU-accelerated `sinf`/`cosf`, full libm math library |
-| `psp::vfpu!()` | Inline VFPU (Vector FPU) assembly macros |
-| `psp::dprintln!()` | Thread-safe debug printing via `SpinMutex` |
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| `kernel` | Kernel mode module support -- enables `module_kernel!()` macro, NAND/SIRCS/codec syscalls, ME coprocessor control, and hardware register access. Requires custom firmware. |
-| `std` | Experimental standard library support -- `String`, `Vec`, `std::fs`, `std::thread`, `std::sync`, `std::time`, `println!()` on real hardware. Build with `RUST_PSP_BUILD_STD=1`. |
-| `embedded-graphics` | Enables the `Framebuffer` display driver for the `embedded-graphics` ecosystem. |
-| `stub-only` | Compile as a stub provider (static library for external projects). |
-
-## Examples
-
-| Example | APIs Demonstrated | Description |
-|---------|-------------------|-------------|
-| `hello-world` | `dprintln!`, `psp::callback` | Minimal PSP program |
-| `cube` | `sceGu*`, `sceGum*`, VRAM alloc | Rotating 3D cube with lighting |
-| `rainbow` | `sceGu*`, vertex colors | Animated color gradient |
-| `gu-background` | `sceGu*`, VRAM alloc | Clear screen with solid color |
-| `gu-debug-print` | `sceGu*`, debug font | On-screen debug text via GU |
-| `clock-speed` | `psp::power` | Read/set CPU and bus clock speeds |
-| `time` | `sceRtc*` | Read and display real-time clock |
-| `wlan` | `sceWlan*` | Query WLAN module status |
-| `msg-dialog` | `sceUtility*` | System message dialog |
-| `embedded-graphics` | `Framebuffer`, `tinybmp` | Draw BMP images via embedded-graphics |
-| `paint-mode` | `Framebuffer`, `sceCtrl*` | Touch-style paint app with D-pad |
-| `fontdue-scrolltext` | `fontdue`, framebuffer | TrueType font rendering and scrolling |
-| `ratatui` | `ratatui`, `mousefood` | TUI framework on PSP display |
-| `vfpu-addition` | `vfpu!()` macro | VFPU vector addition |
-| `vfpu-context-switching` | `vfpu!()`, threads | VFPU context save/restore across threads |
-| `rust-std-hello-world` | `String`, `Vec`, `std` | Standard library on PSP |
-| `kernel-mode` | `module_kernel!()`, NAND, volatile mem | Kernel-mode APIs (requires CFW) |
-| `file-io` | `psp::io` | File write and read-back |
-| `screenshot` | `screenshot_bmp()`, `sceIoWrite` | Capture framebuffer to BMP file |
-| `audio-tone` | `psp::audio::AudioChannel` | Generate and play a sine wave |
-| `config-save` | `psp::config`, `psp::io` | Save and load key-value settings |
-| `input-analog` | `psp::input`, `psp::display` | Controller input with analog deadzone |
-| `net-http` | `psp::net`, `psp::wlan` | Low-level raw TCP HTTP request |
-| `http-client` | `psp::http`, `psp::net` | High-level HTTP GET with HttpClient |
-| `savedata` | `psp::savedata`, `sceGu*` | Save and load game data via system dialog |
-| `osk-input` | `psp::osk`, `sceGu*` | On-screen keyboard text input |
-| `rtc-sysinfo` | `psp::rtc`, `psp::system_param` | RTC date/time and system settings |
-| `system-font` | `psp::font`, `psp::gu_ext` | Render text using PSP system fonts |
-| `thread-sync` | `psp::thread`, `psp::sync` | Spawn threads sharing a SpinMutex counter |
-| `timer-alarm` | `psp::timer` | One-shot alarm and virtual timer |
-
-## Projects Using rust-psp
-
-### OASIS_OS
-
-**[github.com/AndrewAltimit/oasis-os](https://github.com/AndrewAltimit/oasis-os)** -- An embeddable operating system framework in Rust with a skinnable shell, scene-graph UI, command interpreter, virtual file system, and plugin system. Renders to any pixel buffer at 480x272 native resolution across desktop (SDL2), Unreal Engine 5 (FFI), and PSP backends.
-
-The PSP backend (`crates/oasis-backend-psp/`) is a comprehensive example of this SDK in production, demonstrating:
-
-| SDK Module | Usage |
-|-----------|-------|
-| `psp::input` | Edge-detected controller input (press/release/analog) driving a windowed desktop UI |
-| `psp::font` | System TrueType font rendering via `FontLib` + `FontRenderer` with VRAM glyph atlas |
-| `psp::gu_ext` | `SpriteBatch` for batched 2D sprite rendering (text, UI chrome, icons) |
-| `psp::audio` | Background-thread MP3 playback via `AudioChannel` with software mixer |
-| `psp::mp3` | Hardware-accelerated MP3 decoding to PCM with `Mp3Decoder` |
-| `psp::thread` | `psp::thread::spawn()` for dedicated audio and file I/O worker threads |
-| `psp::sync` | `SpscQueue` for lock-free command passing between main and worker threads |
-| `psp::io` | File I/O on Memory Stick (`ms0:/`) for config, save data, and media browsing |
-| `psp::config` | Persistent key-value settings via binary RCFG format |
-| `psp::net` | WiFi AP connection and TCP sockets for remote terminal access |
-| `psp::http` | HTTP client for network requests |
-| `psp::osk` | On-screen keyboard for terminal command input |
-| `psp::dialog` | System confirmation/error dialogs |
-| `psp::power` | CPU/bus clock control (222/266/333 MHz profiles), battery monitoring, power callbacks |
-| `psp::rtc` | Real-time clock for status bar time display |
-| `psp::image` | Hardware JPEG decoding for photo viewer |
-| `psp::screenshot` | Framebuffer capture to BMP |
-| `psp::usb` | USB mass storage mode (RAII) for file transfer |
-| `psp::cache` | `UncachedPtr` for GE-visible texture and font atlas memory |
-| `psp::dma` | DMA texture uploads to VRAM |
-| `psp::me` | Media Engine offloading for background computation |
-| `psp::time` | `FrameTimer` for frame rate measurement and delta time |
-| `psp::wlan` | WLAN status monitoring for network indicator |
-| `psp::savedata` | System save/load dialog integration |
-| `module_kernel!()` | Kernel mode for volatile memory, exception handlers, and ME access |
-
-Build with `std` + `kernel` features:
-
-```bash
-cd crates/oasis-backend-psp
-RUST_PSP_BUILD_STD=1 cargo +nightly psp --release
-```
-
-## Kernel Mode
-
-Kernel mode unlocks privileged PSP APIs for custom firmware homebrew. Enable it by adding the `kernel` feature and using `module_kernel!()`:
-
-```toml
-[dependencies]
-psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["kernel"] }
-```
-
-```rust
-#![no_std]
-#![no_main]
-
-psp::module_kernel!("MyKernelApp", 1, 0);
-
-fn psp_main() {
-    psp::callback::setup_exit_callback().unwrap();
-    unsafe {
-        let me_freq = psp::sys::scePowerGetMeClockFrequency();
-        psp::dprintln!("ME clock: {}MHz", me_freq);
-    }
-}
-```
-
-### What Kernel Mode Enables
-
-| Module | APIs | Description |
-|--------|------|-------------|
-| `psp::sys::nand` | `sceNand*` | NAND flash read/write/status |
-| `psp::sys::sircs` | `sceSircsSend` | Infrared remote control (SIRCS) |
-| `psp::sys::codec` | `sceVideocodec*` | Hardware video codecs |
-| `psp::sys::sctrl` | `sctrlHEN*` | CFW syscall hooking API (ARK-4/PRO) |
-| `psp::sys::power` | `scePowerGet/SetMeClockFrequency` | Media Engine clock control |
-| `psp::me` | `me_boot`, `me_alloc`, `to_uncached` | Media Engine coprocessor boot/task management |
-| `psp::hw` | `hw_read32`, `hw_write32`, `Register<T>` | Memory-mapped I/O register access |
-| `psp::hook` | `SyscallHook`, `find_function` | Syscall hooking with inline fallback for CFW plugins |
-| `psp::sys::kernel` | `sceKernelRegister*ExceptionHandler` | CPU exception handler registration |
-| `psp::sys::kernel` | `sceKernelVolatileMem*` | Extra 4MB RAM (PSP-2000+) |
-| `psp::sys::kernel` | `sceKernelAllocPartitionMemory` | ME/kernel memory partitions |
-
-### Requirements
-
-- **Custom firmware**: ARK-4, PRO CFW, ME CFW, or similar
-- **Firmware version**: 6.60/6.61 (standard CFW base)
-- Kernel-mode EBOOTs run from `ms0:/PSP/GAME/` like user-mode EBOOTs
-
-See `examples/kernel-mode/` for a complete example.
-
-## Standard Library Support
-
-This fork adds experimental `std` support for PSP, allowing use of `String`, `Vec`, `std::fs`, `std::thread`, `std::sync`, `std::time`, and `println!()` on real hardware.
-
-### Quick Start
-
-```rust
-#![feature(restricted_std)]
-#![no_main]
-
-psp::module!("rust_std_hello_world", 1, 1);
-
-fn psp_main() {
-    psp::callback::setup_exit_callback().unwrap();
-
-    let greeting = String::from("Hello from std!");
-    psp::dprintln!("{}", greeting);
-
-    let people = vec!["sajattack", "overdrivenpotato", "iridescence"];
-    for person in people {
-        psp::dprint!("Hello, {}!\n", person);
-    }
-}
-```
-
-Enable `std` in your `Cargo.toml`:
-
-```toml
-[dependencies]
-psp = { git = "https://github.com/AndrewAltimit/rust-psp", features = ["std"] }
-```
-
-Build with `RUST_PSP_BUILD_STD=1`:
-
-```bash
-RUST_PSP_BUILD_STD=1 cargo +nightly psp --release
-```
-
-### How It Works
-
-PSP is not a supported Rust target, so `std` falls through to the `unsupported` PAL by default. This fork provides a PSP-specific Platform Abstraction Layer (PAL) via a sysroot overlay:
-
-1. **`rust-std-src/`** contains PSP PAL source files that implement std's internal interfaces using PSP syscalls
-2. **At build time**, `cargo-psp` creates a merged sysroot by copying the installed `rust-src` component and overlaying PSP files on top
-3. **`-Z build-std`** rebuilds std from the merged source, producing a PSP-aware standard library
-4. **`psp/src/std_support/`** exports `#[no_mangle] extern "C"` FFI bridge functions that the PAL calls at link time
-
-### What's Supported
-
-| Module | Status | Implementation |
-|--------|--------|---------------|
-| `String`, `Vec`, collections | Working | PSP kernel memory allocator |
-| `std::thread` | Working | `sceKernelCreateThread` / `sceKernelStartThread` |
-| `std::sync::Mutex` | Working | PSP lightweight mutexes (`sceKernelLwMutex*`) |
-| `std::sync::Condvar` | Working | PSP event flags (`sceKernelEventFlag*`) |
-| `std::time::Instant` | Working | `sceKernelGetSystemTimeWide` (microsecond precision) |
-| `std::time::SystemTime` | Working | `sceRtcGetCurrentTick` |
-| `std::fs` | Working | `sceIo*` (read/write files on `ms0:/`, `host0:/`, etc.) |
-| `std::io::stdout/stderr` | Working | `sceKernelStdout()` / `sceKernelStderr()` file descriptors |
-| `std::os::psp::raw::RawFd` | Working | PSP `SceUid` as raw file descriptor |
-| `std::net`, `std::process` | Unsupported | Returns `io::ErrorKind::Unsupported` |
-
-### Important Notes
-
-- User crates must use `#![feature(restricted_std)]` and `#![no_main]`
-- Entry point is `fn psp_main()` (not `fn main()`), declared via `psp::module!()`
-- PSP is single-core MIPS with preemptive threading -- `available_parallelism()` returns 1
-- File paths use PSP device notation: `ms0:/PSP/GAME/...`, `host0:/...`
-
-See `examples/rust-std-hello-world/` for a complete example.
-
-## Usage
-
-To use the `psp` crate in your own project, add it as a git dependency:
-
-```toml
-[dependencies]
-psp = { git = "https://github.com/AndrewAltimit/rust-psp", branch = "main" }
-```
-
-In your `main.rs` file, set up a basic skeleton:
+> Rust SDK for Sony PSP homebrew. A modernized fork with edition 2024, safety
+> hardening, kernel mode, experimental `std`, and a large set of high-level
+> APIs.
+
+**Forked from** [overdrivenpotato/rust-psp](https://github.com/overdrivenpotato/rust-psp) (MIT).
+Upstream is maintained at a low cadence. This fork diverges substantially:
+see [docs/fork-changes.md](docs/fork-changes.md).
+
+> [!IMPORTANT]
+> This fork is **not published on crates.io**. The `psp` and `cargo-psp`
+> crates on crates.io belong to upstream. `cargo install cargo-psp` or
+> `psp = "0.x"` will give you the upstream project, not this one. Use the
+> git URLs below.
 
 ```rust
 #![no_std]
@@ -377,318 +26,154 @@ fn psp_main() {
 }
 ```
 
-Run `cargo +nightly psp` to build your `EBOOT.PBP` file, or
-`cargo +nightly psp --release` for a release build.
+## Quick start
 
-Customize your EBOOT with a `Psp.toml` in your project root (all keys optional):
+### 1. Toolchain
 
-```toml
-title = "XMB title"
-xmb_icon_png = "path/to/24bit_144x80_image.png"
-xmb_background_png = "path/to/24bit_480x272_background.png"
-xmb_music_at3 = "path/to/ATRAC3_audio.at3"
-```
-
-More options can be found in the schema definition [here](cargo-psp/src/main.rs#L18-L100).
-
-## What's Different from Upstream
-
-### Edition 2024 and Toolchain
-
-- Workspace and all crates updated to Rust edition 2024
-- All `#[no_mangle]` and `#[link_section]` attributes updated to `#[unsafe(no_mangle)]` / `#[unsafe(link_section)]` syntax
-- Re-exported `paste::paste` for `$crate::paste!` macro resolution in edition 2024
-- Workspace lints configured (`unsafe_op_in_unsafe_fn = "warn"`, clippy lints)
-- Removed 4 stabilized nightly features (`global_asm`, `const_loop`, `const_if_match`, `panic_info_message`)
-
-### Safety Fixes
-
-- **C runtime intrinsics (CRITICAL):** Reverted `memset`/`memcpy`/`memmove` implementations to manual byte loops. LLVM lowers `core::ptr::write_bytes`/`copy`/`copy_nonoverlapping` back to C memset/memcpy/memmove calls, causing infinite recursion when those functions ARE the implementation. On MIPS this manifests as "jump to invalid address", not a stack overflow.
-- **Use-after-free in test_runner:** Fixed `psp_filename()` returning a pointer to a dropped `String` -- the format buffer now outlives the syscall.
-- **Thread-unsafe panic counter:** Replaced `static mut PANIC_COUNT` with `AtomicUsize` for safe concurrent access.
-- **Allocator overflow checks:** Added `checked_add` for size + alignment calculations in `SystemAlloc::alloc` to prevent integer overflow.
-- **OOM diagnostic:** Added explicit "out of memory" message before spin loop in the allocation error handler.
-- **Global allow scoping:** Removed blanket `#![allow(unsafe_op_in_unsafe_fn)]` from crate root; scoped allows only where needed in `debug.rs`, `sys/mod.rs`, `panic.rs`.
-- **Screenshot BmpHeader:** Replaced `core::mem::transmute` with safe field-by-field LE byte serialization.
-- **libunwind malloc/free shims:** Overflow-safe `malloc` with `checked_add` and validated `Layout`; null-safe `free`; uses `size_of::<usize>()` instead of hardcoded `4` for pointer-width portability.
-
-### Safety Hardening (Refactor Rounds 1-3)
-
-- **GU matrix stack:** Fixed `sceGumMatrixMode` writing out of bounds with unchecked `current_mode` index -- added bounds check returning early on invalid mode.
-- **GU projection matrix:** Fixed `sceGumOrtho` using wrong variable (`delta_x` instead of `delta_y`) for Y-axis scaling.
-- **Allocator double-free guard:** `SystemAlloc::dealloc` now checks freed pointers against allocation base range before dereferencing the stored size.
-- **VRAM allocator alignment:** Fixed `alloc()` using `checked_add` after alignment calculation to prevent silent wraparound.
-- **Eliminated UB in GU:** Replaced raw pointer arithmetic with `addr_of_mut!` and safe indexing throughout `gu.rs`.
-- **Panic handler hardening:** `AtomicUsize` ordering upgraded from `Relaxed` to `SeqCst` for cross-thread panic visibility.
-
-### VRAM Allocator
-
-- Changed `alloc()` from panicking to returning `Result<VramMemChunk, VramAllocError>`
-- Added structured error types: `OutOfMemory { requested, available }`, `UnsupportedPixelFormat`, and `Overflow`
-- VRAM base address now uses `sceGeEdramGetAddr()` instead of hardcoded constants
-- Replaced `static mut VRAM_ALLOCATOR` singleton with atomic take pattern (`AtomicBool` guard)
-- Added `checked_add` in `alloc()` and `checked_mul` in `alloc_sized()` to prevent integer overflow
-
-### Hardware Constants
-
-- Extracted magic numbers into `psp/src/constants.rs`: `SCREEN_WIDTH`, `SCREEN_HEIGHT`, `BUF_WIDTH`, `VRAM_BASE_UNCACHED`, thread priorities, NID values
-- Module macros and `enable_home_button()` use named constants instead of raw numbers
-
-### Thread-Safe Debug Printing
-
-- `dprintln!`/`dprint!` macros now use a `SpinMutex` (atomic spinlock) to protect the character buffer
-- Eliminates `static mut` data race for multi-threaded PSP homebrew
-- Zero overhead on single-core PSP (compiler barrier only, no bus contention)
-
-### Error Handling (cargo-psp)
-
-- All tool binaries (`prxgen`, `pack-pbp`, `mksfo`, `prxmin`, `cargo-psp`) refactored from `unwrap()`/`panic!()` to `Result` with `anyhow` context
-- `fix_imports.rs`: stub position lookup validated with descriptive error for malformed PRX files
-- `build.rs`: replaced unwraps with fallible error handling
-- `cargo-psp` main: cargo message parse errors handled gracefully; title fallback has descriptive error
-- Descriptive error messages with recovery hints
-
-### Features
-
-- `kernel` feature flag added for kernel mode module support (`PSP_MODULE_INFO` flag `0x1000`)
-- `std` support via sysroot overlay and FFI bridge (see [Standard Library Support](#standard-library-support))
-- `libm` dependency added for floating-point math in `no_std`
-
-### Upstream Issues Fixed
-
-| Upstream Issue | Description | Fix |
-|---------------|-------------|-----|
-| [#120](https://github.com/overdrivenpotato/rust-psp/issues/120) | VRAM allocator panics | Result API + atomic singleton + overflow checks |
-| [#126](https://github.com/overdrivenpotato/rust-psp/issues/126) | clippy warnings in cargo-psp | Full anyhow refactor |
-| [#156](https://github.com/overdrivenpotato/rust-psp/issues/156) | Excessive nightly features | 4 stabilized features removed |
-| [#75](https://github.com/overdrivenpotato/rust-psp/issues/75) | memcpy/memset improvements | Idiomatic ptr methods + documented footgun |
-| [#165](https://github.com/overdrivenpotato/rust-psp/issues/165) | Panic/exception support | Hardened malloc/free shims |
-
-## Running Examples
-
-Enter one of the example directories, `examples/hello-world` for instance, and
-run `cargo psp`.
-
-This will create an `EBOOT.PBP` file under `target/mipsel-sony-psp/debug/`
-
-Assuming you have a PSP with custom firmware installed, you can simply copy this
-file into a new directory under `PSP/GAME` on your memory stick, and it will
-show up in your XMB menu.
-
-```
-.
-+-- PSP
-    +-- GAME
-        +-- hello-world
-            +-- EBOOT.PBP
-```
-
-If you do not have a PSP, you can test with PPSSPP:
-
-```bash
-# Build your EBOOT
-cd examples/hello-world
-cargo +nightly psp --release
-
-# Run in PPSSPP (install from https://ppsspp.org)
-ppsspp target/mipsel-sony-psp/release/EBOOT.PBP
-```
-
-Note that graphics code is very sensitive -- if you're writing graphics code we
-recommend developing on real hardware. PPSSPP is more relaxed in some aspects.
-
-## Debugging
-
-Using psplink and psp-gdb from the [pspdev github organization](https://github.com/pspdev) (`psplinkusb v3.1.0 and GNU gdb (GDB) 11.0.50.20210718-git` or later), Rust types are fully supported. Enable debug symbols in your release binaries:
+The PSP target needs **nightly** Rust with `rust-src` (`std`/`core` are
+rebuilt with `-Z build-std`). Nightly regularly breaks crates that use
+compiler internals, so pin a known-good nightly in your project:
 
 ```toml
-[profile.release]
-debug = true
+# rust-toolchain.toml (in your project root)
+[toolchain]
+channel = "nightly-2026-04-13"
+components = ["rust-src"]
 ```
 
-Follow the instructions in part 6 of [the PSPlink manual](https://usermanual.wiki/Document/psplinkmanual.1365336729/).
+`nightly-2026-04-13` is the nightly CI pins and validates for `no_std` and `std` builds (`NIGHTLY_DATE` in [`docker/rust-ci.Dockerfile`](docker/rust-ci.Dockerfile)).
+Recent nightlies do **not** build the `psp` crate as of this writing. Run
+`cargo psp` without `+nightly`, since `+nightly` overrides the pin.
 
-## Troubleshooting
+### 2. Install the build tools
 
-### `error[E0460]: found possibly newer version of crate ...`
-
-```
-error[E0460]: found possibly newer version of crate `panic_unwind` which `psp` depends on
-```
-
-Clean your target directory:
-
-```sh
-cargo clean
-```
-
-## CI/CD
-
-All CI runs on a self-hosted GitHub Actions runner shared with [template-repo](https://github.com/AndrewAltimit/template-repo). Rust compilation and testing execute inside Docker containers for reproducibility; AI agent tooling runs directly on the host where it is pre-installed.
-
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| `ci.yml` | push to main | Basic CI: fmt, clippy, test, build, cargo-deny, PSP emulator test |
-| `pr-validation.yml` | pull request | Full PR pipeline: CI + Gemini AI review + agent auto-fix |
-| `main-ci.yml` | push to main, `v*` tags | CI on main, build release binaries and create GitHub Release on tags |
-
-### CI Stages
-
-All stages run inside the `rust-ci` Docker container (`docker compose --profile ci`):
-
-1. **Format check** -- `cargo fmt --check` (stable for cargo-psp, nightly for psp workspace)
-2. **Clippy** -- `cargo clippy -D warnings` (cargo-psp, host target)
-3. **Unit tests** -- `cargo test` (cargo-psp)
-4. **Build** -- release build of cargo-psp + CI test EBOOT
-5. **cargo-deny** -- license and advisory checks for both workspaces
-6. **PSP emulator test** -- run test EBOOT in PPSSPPHeadless (Docker)
-
-### PR Review Pipeline
-
-PRs receive automated AI code reviews from Gemini, followed by an agent that can automatically apply fixes from review feedback (with a 5-iteration safety limit per agent type). If CI stages fail, a separate failure-handler agent attempts automated fixes.
-
-> **OpenAI / Codex Disabled**
->
-> OpenAI/Codex integrations are disabled. OpenAI permits government partners unrestricted use of its models within their own definition of legality. Anthropic maintains explicit prohibitions on mass surveillance and autonomous weapons. We default to the stricter policy. To re-enable at your own risk: `CODEX_ENABLED=true`.
-
-### Runner Dependencies from template-repo
-
-The self-hosted runner provides the following binaries built from [template-repo](https://github.com/AndrewAltimit/template-repo). These are expected to be on `PATH`; workflows degrade gracefully if they are missing.
-
-| Binary | Source | Used By | Purpose |
-|--------|--------|---------|---------|
-| `github-agents` | `tools/rust/github-agents-cli` | `pr-validation.yml` | PR reviews (Gemini), iteration tracking |
-| `automation-cli` | `tools/rust/automation-cli` | `pr-validation.yml` | Agent review response, failure handler |
-
-These binaries are also available from [template-repo releases](https://github.com/AndrewAltimit/template-repo/releases).
-
-### Secrets
-
-| Secret | Required By | Purpose |
-|--------|-------------|---------|
-| `GITHUB_TOKEN` | all workflows | Standard GitHub token (automatic) |
-| `AGENT_TOKEN` | `pr-validation.yml` | Personal access token for agent commits (write access) |
-| `GOOGLE_API_KEY` | `pr-validation.yml` | Gemini API key for AI code reviews |
-| `GEMINI_API_KEY` | `pr-validation.yml` | Gemini API key (alternative) |
-
-### Release Pipeline
-
-Tagging a commit with `v*` (e.g., `v0.1.0`) triggers a release build:
-
-1. Full CI validation
-2. Containerized release build of all cargo-psp binaries
-3. GitHub Release creation with binaries attached and auto-generated changelog
-
-## Structure
-
-```
-rust-psp/
-+-- psp/                # Core PSP crate (~829 syscall bindings + 38 SDK modules)
-+-- cargo-psp/          # Build tool: cross-compile + prxgen + pack-pbp -> EBOOT.PBP
-+-- rust-std-src/       # PSP PAL overlay for std support (merged with rust-src at build time)
-+-- examples/           # Sample programs (hello-world, cube, gu-background, etc.)
-+-- ci/                 # CI test harness, std verification, PPSSPPHeadless Dockerfile
-+-- docker/             # Docker images (rust-ci)
-+-- .github/            # GitHub Actions workflows and composite actions
-+-- deny.toml           # cargo-deny license and advisory checks
-```
-
-### Docker Images
-
-The repo includes two locally-built Docker images for CI and nine pre-built MCP images for AI agent tooling:
-
-| Image | Dockerfile | Built From |
-|-------|-----------|------------|
-| `rust-ci` | `docker/rust-ci.Dockerfile` | This repo |
-| `ppsspp` | `ci/Dockerfile-ppsspp` | This repo |
-| `template-repo-mcp-code-quality` | `docker/mcp-code-quality.Dockerfile` | [template-repo](https://github.com/AndrewAltimit/template-repo) |
-| `template-repo-mcp-content-creation` | `docker/mcp-content.Dockerfile` | template-repo |
-| `template-repo-mcp-gemini` | `docker/mcp-gemini.Dockerfile` | template-repo |
-| `template-repo-mcp-opencode` | `docker/mcp-opencode.Dockerfile` | template-repo |
-| `template-repo-mcp-crush` | `docker/mcp-crush.Dockerfile` | template-repo |
-| `template-repo-mcp-codex` | `docker/codex.Dockerfile` | template-repo (DISABLED -- see security policy above) |
-| `template-repo-mcp-github-board` | `docker/mcp-github-board.Dockerfile` | template-repo |
-| `template-repo-mcp-agentcore-memory` | `docker/mcp-agentcore-memory.Dockerfile` | template-repo |
-| `template-repo-mcp-reaction-search` | `mcp_reaction_search/Dockerfile` | template-repo |
-
-The MCP images are referenced as `image: template-repo-mcp-<name>:latest` in `docker-compose.yml`. They are **not buildable from this repo** -- source code lives in template-repo under `tools/mcp/`. Build them once from a template-repo checkout:
+`cargo-psp` wraps `cargo build`, then runs `prxgen`, `mksfo`, and `pack-pbp`
+to produce an `EBOOT.PBP`. **All five binaries must be on your `PATH`.**
 
 ```bash
-cd /path/to/template-repo
-docker compose --profile services build
+# a) Build from this repo with cargo (any host OS; pin with --tag v1.0.0 or --rev <sha>)
+cargo install --git https://github.com/AndrewAltimit/rust-psp cargo-psp --locked
+# b) Prebuilt binaries (currently linux-aarch64 only):
+#    https://github.com/AndrewAltimit/rust-psp/releases
+# c) From a clone, then add rust-psp/cargo-psp/target/release to PATH
+git clone https://github.com/AndrewAltimit/rust-psp
+cd rust-psp/cargo-psp && cargo build --release
 ```
 
-The images will then be available locally for this repo's `docker compose --profile services` commands. CI workflows and PSP development work without the MCP images -- they are only needed for interactive AI agent sessions (Claude Code, Gemini, etc.). Note: the Codex MCP image is disabled per security policy.
+Option (a) installs `cargo-psp`, `prxgen`, `pack-pbp`, `mksfo`, and `prxmin`.
+The host tools build on stable or nightly.
 
-## Pre-built Binaries
+### 3. Create a project
 
-Pre-built binaries for all toolchain components are available from [GitHub Releases](../../releases). Each release includes:
+```toml
+# Cargo.toml
+[package]
+name = "my-homebrew"
+version = "0.1.0"
+edition = "2024"
 
-| Binary | Description |
-|--------|-------------|
-| `cargo-psp` | Cargo subcommand for building PSP homebrew (EBOOT.PBP) |
-| `prxgen` | PRX generator for PSP modules |
-| `pack-pbp` | PBP archive packer |
-| `mksfo` | SFO metadata file generator |
-| `prxmin` | PRX minimizer/stripper |
+[dependencies]
+psp = { git = "https://github.com/AndrewAltimit/rust-psp" }
+# Pin with  tag = "v1.0.0"  or  rev = "<sha>".
+# Features: "kernel", "std", "embedded-graphics", "stub-only" (see docs/api-overview.md)
+```
+
+Put the hello world above in `src/main.rs`. No `.cargo/config.toml` or target
+JSON is needed: `cargo-psp` passes `--target mipsel-sony-psp` and the
+`-Z build-std` flags itself.
+
+### 4. Build and run
 
 ```bash
-# Download from the latest release and install
-chmod +x cargo-psp-linux-* prxgen-linux-* pack-pbp-linux-* mksfo-linux-* prxmin-linux-*
-cp cargo-psp-linux-* ~/.cargo/bin/cargo-psp
-cp prxgen-linux-* ~/.cargo/bin/prxgen
-cp pack-pbp-linux-* ~/.cargo/bin/pack-pbp
-cp mksfo-linux-* ~/.cargo/bin/mksfo
-cp prxmin-linux-* ~/.cargo/bin/prxmin
+cargo psp            # debug   -> target/mipsel-sony-psp/debug/EBOOT.PBP
+cargo psp --release  # release -> target/mipsel-sony-psp/release/EBOOT.PBP
 ```
 
-Binaries are built in Docker containers via the `main-ci.yml` GitHub Actions workflow and attached to releases on `v*` tags.
+Extra arguments are forwarded to `cargo build`. In a workspace with several
+binaries, outputs are named `<bin>.PBP`. Copy the EBOOT to
+`ms0:/PSP/GAME/<your-app>/EBOOT.PBP` on a custom-firmware PSP, or run it in
+[PPSSPP](https://ppsspp.org). Debugging and common build errors:
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
-## Dependencies
+An optional `Psp.toml` sets XMB title, icon, background, and music: see
+[Customizing the EBOOT](docs/troubleshooting.md#customizing-the-eboot-psptoml).
 
-Rust **nightly** toolchain with the `rust-src` component:
+## Highlights
 
-```sh
-rustup default nightly && rustup component add rust-src
+- **[Syscall coverage](docs/api-overview.md#syscall-bindings-pspsys)**: 837
+  firmware imports (812 user-mode, 25 kernel-only) plus native Rust GU/GUM graphics.
+- **[High-level modules](docs/api-overview.md#high-level-modules)**: 41 safe,
+  mostly RAII wrappers: threads, input, I/O, savedata, audio, H.264 on the ME,
+  fonts, sprite batching, TCP/UDP/HTTP, and more.
+- **[Kernel mode](docs/kernel-mode.md)** (CFW only): `module_kernel!()`, Media
+  Engine tasks, syscall hooking, NAND, IR remote, MMIO, exception handlers.
+- **[Experimental `std`](docs/std.md)**: `String`, `Vec`, `HashMap`, `std::fs`,
+  `std::thread`, `std::sync`, `std::time` via a PSP std overlay.
+- **VFPU**: the `vfpu_asm!` inline assembler, `Vec4`/`Mat4` math, context save/restore.
+- **[Self-contained toolchain](docs/prx.md)**: no C/C++ PSPSDK dependency;
+  `cargo-psp` builds the PRX and `EBOOT.PBP` directly.
+
+## Examples
+
+There are 30 examples in [`examples/`](examples/), from `hello-world` and a
+textured 3D `cube` to audio, OSK, savedata, networking, kernel mode, and `std`.
+Build one with `cd examples/<name> && cargo psp --release`. The full annotated
+list is in [docs/examples.md](docs/examples.md).
+
+## Documentation
+
+Full index: [docs/README.md](docs/README.md).
+- [API overview](docs/api-overview.md): feature flags, every syscall domain, every high-level module
+- [Kernel mode](docs/kernel-mode.md): what the `kernel` feature unlocks, ME tasks, hooking, exceptions
+- [Standard library](docs/std.md): how the `std` overlay works, out-of-tree setup, support matrix
+- [Examples](docs/examples.md): all 30 examples and what they demonstrate
+- [Running & troubleshooting](docs/troubleshooting.md): PPSSPP, `Psp.toml`, psplink/gdb, common errors
+- [PRX section structure](docs/prx.md): ELF/PRX section layout
+- [Changes from upstream](docs/fork-changes.md): what this fork changed and why
+- [Maintainer & CI infrastructure](docs/maintainers.md): workspaces, local CI, releases, Docker images
+
+## Projects using rust-psp
+
+**[OASIS_OS](https://github.com/AndrewAltimit/oasis-os)**: an embeddable OS
+framework (skinnable shell, scene-graph UI, VFS, plugins) for desktop, Unreal
+Engine 5, and PSP. Its PSP backend uses `std` + `kernel` and exercises most of
+the SDK, from input, fonts, and audio to the Media Engine and H.264 video.
+
+## Repository layout
+
+```
+psp/           SDK crate: psp::sys bindings + high-level modules
+cargo-psp/     Host tools (separate workspace): cargo-psp, prxgen, pack-pbp, mksfo, prxmin
+rust-std-src/  PSP std overlay, merged with rust-src at build time
+examples/      30 sample programs
+ci/            On-device and std test harnesses, PPSSPP Dockerfile, run-ci.sh
+libunwind/     Makefile + patch used to produce psp/libunwind*.a
+docker/        rust-ci image
+docs/          Guides (see docs/README.md)
+site/          GitHub Pages site
+tools/cli/     Local AI-agent launchers
+.github/       Workflows and composite actions
 ```
 
-### Building from Source
+Contributors need two toolchains: the root workspace targets the PSP
+(nightly), and `cargo-psp/` builds for the host (stable). Development
+commands (`./ci/run-ci.sh full` runs everything, containerized), CI, releases,
+and the AI review pipeline are documented in
+[docs/maintainers.md](docs/maintainers.md). External contributions are not
+accepted: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-If you prefer to build the toolchain from source instead of using pre-built binaries:
+## Roadmap
 
-```sh
-cd cargo-psp && cargo build --release
-# Binaries at: target/release/{cargo-psp,prxgen,pack-pbp,mksfo,prxmin}
-```
-
-Or use it directly via `cargo run`:
-
-```sh
-cd /path/to/your/psp/project
-cargo +nightly psp --release
-```
-
-**Do NOT run `cargo install cargo-psp`** -- this would install the upstream version from crates.io, not this fork. Use the local `cargo-psp/` directory or download pre-built binaries from [Releases](../../releases).
-
-## Upstream
-
-This project is a completely new SDK with no dependency on the original C/C++
-PSPSDK. It aims to be a complete replacement with more efficient implementations
-of graphics functions and the addition of missing libraries.
-
-Upstream repository: [github.com/overdrivenpotato/rust-psp](https://github.com/overdrivenpotato/rust-psp)
-
-### Roadmap
-
-- [x] `core` support
-- [x] PSP system library support
-- [x] `alloc` support
-- [x] `panic = "unwind"` support
-- [x] Macro-based VFPU assembler
-- [x] Full 3D graphics support
-- [x] No dependency on PSPSDK / PSPToolchain
-- [x] Full parity with user mode support in PSPSDK
-- [x] Port definitions to `libc` crate
-- [x] Kernel mode module support (`kernel` feature flag)
-- [x] Add `std` support
+This SDK aims to be a complete replacement for PSPSDK, with more efficient
+graphics implementations and the libraries PSPSDK is missing. Done: `core`,
+`alloc`, `panic = "unwind"`, the VFPU assembler, full 3D graphics, user-mode
+parity with PSPSDK, `libc` definitions, kernel mode, and experimental `std`.
+Open:
+- [ ] Find `rust-std-src` automatically for out-of-tree `std` projects
 - [ ] Automatically sign EBOOT.PBP files to run on unmodified PSPs
+
+## License
+
+MIT. See [LICENSE](LICENSE). Based on
+[overdrivenpotato/rust-psp](https://github.com/overdrivenpotato/rust-psp) and
+its contributors.
